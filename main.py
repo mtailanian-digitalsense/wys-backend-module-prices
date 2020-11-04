@@ -2,6 +2,7 @@ import jwt
 import os
 import logging
 import enum
+import constants
 from random import randrange
 import requests
 import json
@@ -15,6 +16,7 @@ from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.ext.hybrid import hybrid_property
 from flask_cors import CORS
 from http import HTTPStatus
+import pandas as pd
 
 # Loading Config Parameters
 DB_USER = os.getenv('DB_USER', 'wys')
@@ -23,7 +25,7 @@ DB_IP = os.getenv('DB_IP_ADDRESS', '10.2.19.195')
 DB_PORT = os.getenv('DB_PORT', '3307')
 DB_SCHEMA = os.getenv('DB_SCHEMA', 'wys')
 APP_HOST = os.getenv('APP_HOST', '127.0.0.1')
-APP_PORT = os.getenv('APP_PORT', 5007)
+APP_PORT = os.getenv('APP_PORT', 5008)
 PROJECTS_MODULE_HOST = os.getenv('PROJECTS_MODULE_HOST', '127.0.0.1')
 PROJECTS_MODULE_PORT = os.getenv('PROJECTS_MODULE_PORT', 5000)
 PROJECTS_MODULE_API = os.getenv('PROJECTS_MODULE_API', '/api/projects/')
@@ -41,8 +43,8 @@ db = SQLAlchemy(app)
 Base = declarative_base()
 
 # Swagger Configurations
-SWAGGER_URL = '/api/times/docs/'
-API_URL = '/api/times/spec'
+SWAGGER_URL = '/api/prices/docs/'
+API_URL = '/api/prices/spec'
 swaggerui_blueprint = get_swaggerui_blueprint(
     SWAGGER_URL,
     API_URL,
@@ -140,10 +142,143 @@ class PriceCountry(db.Model):
     """
     id = db.Column(db.Integer, primary_key=True)
     name = db.Column(db.String, nullable=False)
-    default = db.Column(db.Boolean, nullable=False)
+    default = db.Column(db.Boolean, nullable=False, default=False)
     values = db.relationship("PriceValue",
                              backref="price_country",
                              cascade="all, delete, delete-orphan")
+
+
+def token_required(f):
+    @wraps(f)
+    def decorator(*args, **kwargs):
+
+        bearer_token = request.headers.get('Authorization', None)
+        try:
+            token = bearer_token.split(" ")[1]
+        except Exception as ierr:
+            app.logger.error(ierr)
+            return jsonify({'message': 'a valid bearer token is missing'}), 500
+
+        if not token:
+            app.logger.debug("token_required")
+            return jsonify({'message': 'a valid token is missing'})
+
+        app.logger.debug("Token: " + token)
+        try:
+            data = jwt.decode(token, app.config['SECRET_KEY'],
+                              algorithms=['RS256'], audience="1")
+            user_id: int = data['user_id']
+            request.environ['user_id'] = user_id
+        except Exception as err:
+            return jsonify({'message': 'token is invalid', 'error': err})
+        except KeyError as kerr:
+            return jsonify({'message': 'Can\'t find user_id in token', 'error': kerr})
+
+        return f(*args, **kwargs)
+
+    return decorator
+
+
+@app.route("/api/prices/spec", methods=['GET'])
+@token_required
+def spec():
+    swag = swagger(app)
+    swag['info']['version'] = "1.0"
+    swag['info']['title'] = "WYS Prices API Service"
+    swag['tags'] = [{
+        "name": "Prices",
+        "description": "Methods to configure Prices"
+    }]
+    return jsonify(swag)
+
+
+@app.route('/api/prices/', methods=['POST'])
+def upload_prices():
+    """
+        Upload/Update Prices
+        ---
+        tags:
+        - "Prices"
+        produces:
+        - "application/json"
+        consumes:
+        - "multipart/form-data"
+        parameters:
+        - name: "file"
+          in: "formData"
+          description: "File to upload"
+          required: true
+          type: file
+    """
+
+    ''' Verify that archive is a Excel spreadsheet (xls or xlsx)'''
+    # Check if the post request has the file part
+    if 'file' not in request.files:
+        abort(HTTPStatus.BAD_REQUEST, "No Multipart file found")
+    file = request.files['file']
+
+    if file.filename == '':
+        logging.warning('No selected File')
+        return jsonify({'message': "No selected file"}), HTTPStatus.BAD_REQUEST
+
+    filename: str = file.filename
+
+    filename_split: [] = filename.split('.')
+
+    if not (filename_split[-1] == constants.VALID_EXTENSIONS_XLS or
+            filename_split[-1] == constants.VALID_EXTENSIONS_XLSX):
+        logging.warning(f'{filename_split[-1]} is not a valid extension')
+        return {'message': f'{filename_split[-1]} is not a valid extension'}, 420
+
+    # Read sheets names as country name
+    sheets: dict = pd.read_excel(file, None)
+
+    logging.debug(sheets)
+
+    # For Each sheet
+    for country_name in sheets:
+        try:
+            # If country exist take id, else, create a new country and take the new id
+            country: PriceCountry = PriceCountry.query\
+                                                .filter(PriceCountry.name == country_name.upper())\
+                                                .first()
+
+            country_id: int
+            if country is None:
+                country = PriceCountry()
+                country.name = country_name.upper()
+                country.code = country_name.upper()
+                db.session.add(country)
+                db.session.commit()
+
+            country_id = country.id
+
+        except Exception as exp:
+            logging.error(f"Error in database {exp}")
+            db.session.rollback()
+            return jsonify({'message': f"Error in database {exp}"}), 500
+
+
+        for row in sheets[country_name].iterrows():
+            # Read Column "MODULO" and find Module by name
+            module_name = row[1]['MODULO']
+            logging.debug(module_name)
+
+        # Read Column "PARAMETRO" and find a "PriceCategory"
+
+        # If PriceCategory exist get id else create and get the id.
+
+        # Read columns "ESTANDAR BAJO", "ESTANDAR MEDIO", "ESTANDAR ALTO".
+
+        # Get a price value by PriceCountry, PriceCategory and PriceModule. If Exist
+        # get Object else, create a new object. Update or create the values low, medium and high.
+
+    # commit database
+
+    # Rollback database if something is wrong.
+
+    # Return status
+    return jsonify({'status': 'OK'})
 
 
 if __name__ == '__main__':

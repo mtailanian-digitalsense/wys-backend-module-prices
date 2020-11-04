@@ -149,4 +149,6 @@ pyvenv.cfg
 
 .idea/
 
-Include/
+Include
+
+~$Template_Planilla_Costos.xlsx

@@ -9,3 +9,5 @@ gunicorn
 cryptography
 flask-cors
 requests
+pandas
+xlrd
