@@ -1,22 +1,19 @@
-import jwt
-import os
-import logging
 import enum
-import constants
-from random import randrange
-import requests
-import json
-from sqlalchemy.exc import SQLAlchemyError
+import logging
+import os
+from functools import wraps
+from http import HTTPStatus
+
+import jwt
+import pandas as pd
 from flask import Flask, jsonify, abort, request
+from flask_cors import CORS
 from flask_sqlalchemy import SQLAlchemy
 from flask_swagger import swagger
 from flask_swagger_ui import get_swaggerui_blueprint
-from functools import wraps
 from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy.ext.hybrid import hybrid_property
-from flask_cors import CORS
-from http import HTTPStatus
-import pandas as pd
+
+import constants
 
 # Loading Config Parameters
 DB_USER = os.getenv('DB_USER', 'wys')
@@ -126,12 +123,12 @@ class PriceValue(db.Model):
     high: Value in USD related to a category and module
     """
     id = db.Column(db.Integer, primary_key=True)
-    low = db.Column(db.Float, nullable=False)
-    medium = db.Column(db.Float, nullable=False)
-    high = db.Column(db.Float, nullable=False)
-    module_id = db.Column(db.Integer, db.ForeignKey('price_module.id'), nullable=False)
-    country_id = db.Column(db.Integer, db.ForeignKey('price_country.id'), nullable=False)
-    category_id = db.Column(db.Integer, db.ForeignKey('price_category.id'), nullable=False)
+    low = db.Column(db.Float, nullable=False, default=0.0)
+    medium = db.Column(db.Float, nullable=False, default=0.0)
+    high = db.Column(db.Float, nullable=False, default=0.0)
+    module_id = db.Column(db.Integer, db.ForeignKey('price_module.id'), nullable=True)
+    country_id = db.Column(db.Integer, db.ForeignKey('price_country.id'), nullable=True)
+    category_id = db.Column(db.Integer, db.ForeignKey('price_category.id'), nullable=True)
 
 
 class PriceCountry(db.Model):
@@ -239,9 +236,9 @@ def upload_prices():
     for country_name in sheets:
         try:
             # If country exist take id, else, create a new country and take the new id
-            country: PriceCountry = PriceCountry.query\
-                                                .filter(PriceCountry.name == country_name.upper())\
-                                                .first()
+            country: PriceCountry = PriceCountry.query \
+                .filter(PriceCountry.name == country_name.upper()) \
+                .first()
 
             country_id: int
             if country is None:
@@ -258,24 +255,105 @@ def upload_prices():
             db.session.rollback()
             return jsonify({'message': f"Error in database {exp}"}), 500
 
+        modules_hash = {}
+        category_hash = {}
 
         for row in sheets[country_name].iterrows():
             # Read Column "MODULO" and find Module by name
-            module_name = row[1]['MODULO']
-            logging.debug(module_name)
+            module_name = row[1][constants.ROW_MODULO]
+            if module_name not in modules_hash:
+                logging.debug(module_name)
+                module: PriceModule = PriceModule.query.filter(PriceModule.name == module_name).first()
+                module_id: int
+                if module is None:
+                    try:
+                        module = PriceModule()
+                        module.name = module_name
+                        db.session.add(module)
+                        db.session.commit()
+                        modules_hash[module_name] = module
 
-        # Read Column "PARAMETRO" and find a "PriceCategory"
+                    except Exception as exp:
+                        logging.error(f"Database error. {exp}")
+                        db.session.rollback()
+                        return jsonify({'message': f"Database error. {exp}"}), 500
 
-        # If PriceCategory exist get id else create and get the id.
+            # Read Column "PARAMETRO" and find a "PriceCategory"
+            category_name = row[1][constants.ROW_PARAMETRO]
+            if category_name not in category_hash:
+                category: PriceCategory = PriceCategory.query\
+                                                       .filter(PriceCategory.name == category_name)\
+                                                       .first()
 
-        # Read columns "ESTANDAR BAJO", "ESTANDAR MEDIO", "ESTANDAR ALTO".
+                # If PriceCategory exist get id else create and get the id.
+                if category is None:
+                    try:
+                        category = PriceCategory()
+                        category.name = category_name
+                        category.code = category_name
+                        db.session.add(category)
+                        db.session.commit()
+                        category_hash[category_name] = category
 
-        # Get a price value by PriceCountry, PriceCategory and PriceModule. If Exist
-        # get Object else, create a new object. Update or create the values low, medium and high.
+                    except Exception as exp:
+                        logging.error(f'Database error. {exp}')
+                        db.session.rollback()
+                        return jsonify({'message': f"Database error. {exp}"}), 500
 
-    # commit database
 
-    # Rollback database if something is wrong.
+            # Read columns "ESTANDAR BAJO", "ESTANDAR MEDIO", "ESTANDAR ALTO".
+            try:
+                low: float = row[1][constants.ROW_BAJO]
+                medium: float = row[1][constants.ROW_MEDIO]
+                high: float = row[1][constants.ROW_ALTO]
+
+            except Exception as exp:
+                msg = f"Error reading rows: {constants.ROW_BAJO}, " \
+                      f"{constants.ROW_MEDIO}, {constants.ROW_ALTO}: {exp}"
+                logging.error(msg)
+                return jsonify({"message": msg}), 421
+
+            # Get a price value by PriceCountry, PriceCategory and PriceModule. If Exist
+            # get Object else, create a new object. Update or create the values low, medium and high.
+            module_id = modules_hash[module_name].id
+            category_id = category_hash[category_name].id
+
+            module = modules_hash[module_name]
+            category = category_hash[category_name]
+
+            try:
+                value = PriceValue.query.filter(PriceValue.module_id == modules_hash[module_name].id)\
+                                    .filter(PriceValue.country_id == country_id)\
+                                    .filter(PriceValue.category_id == category_id)\
+                                    .first()
+            except Exception as exp:
+                logging.error(f"Database error {exp}")
+                return jsonify({'message': f"Database error {exp}"}), 500
+
+            if value is None:
+                value = PriceValue()
+                try:
+                    country.values.append(value)
+                    db.session.commit()
+                    category.values.append(value)
+                    db.session.commit()
+                    module.values.append(value)
+                    db.session.commit()
+                except Exception as exp:
+                    logging.error(f"Database error {exp}")
+                    return jsonify({'message': f"Database error {exp}"}), 500
+
+            value.low = low
+            value.medium = medium
+            value.high = high
+
+            # commit database
+            try:
+                db.session.commit()
+            except Exception as exp:
+                db.session.rollback()
+                logging.error(f"Database error {exp}")
+                return jsonify({'message': f"Database error {exp}"}), 500
 
     # Return status
     return jsonify({'status': 'OK'})
