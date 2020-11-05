@@ -98,10 +98,22 @@ class PriceCategory(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     code = db.Column(db.String, nullable=False)
     name = db.Column(db.String, nullable=True)
+    type = db.Column(db.CHAR, nullable=False, default='A')
     values = db.relationship("PriceValue",
                              backref="price_category",
                              cascade="all, delete, delete-orphan")
 
+    def to_dict(self):
+        obj_dict = {
+            'id': self.id,
+            'code': self.code,
+            'name': self.name,
+            'type': self.type
+        }
+        return obj_dict
+
+    def serialize(self):
+        return jsonify(self.to_dict())
 
 class PriceGen(db.Model):
     """
@@ -357,6 +369,23 @@ def upload_prices():
 
     # Return status
     return jsonify({'status': 'OK'})
+
+@app.route('/api/prices/categories', methods=['GET'])
+def get_categories():
+    """
+        Get Categories
+        ---
+        tags:
+        - "Prices"
+        produces:
+        - "application/json"
+        responses:
+        200:
+          description: Categories
+        500:
+          description: Database or Internal Server error
+    """
+    # Query all Categories en DB.
 
 
 if __name__ == '__main__':
