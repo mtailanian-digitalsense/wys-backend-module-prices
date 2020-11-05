@@ -1,5 +1,6 @@
 import enum
 import logging
+import random
 import os
 from functools import wraps
 from http import HTTPStatus
@@ -80,7 +81,7 @@ class PriceModule(db.Model):
     name: Space name (Same name that are in spaces uservice)
     """
     id = db.Column(db.Integer, primary_key=True)
-    name = db.Column(db.String, nullable=False)
+    name = db.Column(db.String(100), nullable=False)
     values = db.relationship("PriceValue",
                              backref="price_module",
                              cascade="all, delete, delete-orphan")
@@ -96,8 +97,8 @@ class PriceCategory(db.Model):
     name: Category Name that will be displayed in frontend (In spanish)
     """
     id = db.Column(db.Integer, primary_key=True)
-    code = db.Column(db.String, nullable=False)
-    name = db.Column(db.String, nullable=True)
+    code = db.Column(db.String(100), nullable=False)
+    name = db.Column(db.String(100), nullable=True)
     type = db.Column(db.CHAR, nullable=False, default='A')
     values = db.relationship("PriceValue",
                              backref="price_category",
@@ -150,12 +151,13 @@ class PriceCountry(db.Model):
     default: If this country is the default.
     """
     id = db.Column(db.Integer, primary_key=True)
-    name = db.Column(db.String, nullable=False)
+    name = db.Column(db.String(100), nullable=False)
     default = db.Column(db.Boolean, nullable=False, default=False)
     values = db.relationship("PriceValue",
                              backref="price_country",
                              cascade="all, delete, delete-orphan")
 
+db.create_all()
 
 def token_required(f):
     @wraps(f)
@@ -201,7 +203,7 @@ def spec():
     return jsonify(swag)
 
 
-@app.route('/api/prices/', methods=['POST'])
+@app.route('/api/prices/upload', methods=['POST'])
 def upload_prices():
     """
         Upload/Update Prices
@@ -380,12 +382,63 @@ def get_categories():
         produces:
         - "application/json"
         responses:
-        200:
-          description: Categories
-        500:
-          description: Database or Internal Server error
+            200:
+              description: Categories
+            500:
+              description: Database or Internal Server error
     """
     # Query all Categories en DB.
+    categories: [] = PriceCategory.query.all()
+
+    cat: PriceCategory
+    return jsonify([cat.to_dict() for cat in categories])
+
+
+@app.route('/api/prices', methods=['POST'])
+@token_required
+def get_estimated_price():
+    """
+        Get Estimated price
+        ---
+
+        tags:
+        - "Prices"
+        produces:
+        - "application/json"
+        consumes:
+        - "application/json"
+        parameters:
+        - in: "body"
+          name: "body"
+          required:
+          - categories
+          properties:
+            categories:
+                type: array
+                items:
+                    type: object
+                    properties:
+                        id:
+                            type: integer
+                            description: Unique id
+                        code:
+                            type: string
+                            description: Category code
+
+                        name:
+                            type: string
+                            description: Category Name
+                        type:
+                            type: char
+                            description: Type of question ('A' or 'B')
+                        resp:
+                            type: string
+                            description: Response for this category
+                            enum: [low, normal, high]
+
+    """
+
+    return jsonify({'value': random.randrange(1000,20000,1)})
 
 
 if __name__ == '__main__':

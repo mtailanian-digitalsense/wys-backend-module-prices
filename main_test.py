@@ -61,6 +61,26 @@ class MyTestCase(unittest.TestCase):
                 self.assertEqual(rv.status_code, HTTPStatus.OK)
                 return rv
 
+    def test_categories(self):
+        db.create_all()
+        db.session.commit()
+        with app.test_client() as client:
+            with open('Template_Planilla_Costos.xlsx', 'rb') as test_file:
+                client.environ_base['HTTP_AUTHORIZATION'] = self.build_token(self.key)
+                files = {'file': (BytesIO(test_file.read()), 'planilla_excel.xlsx')}
+
+                rv = client.post('/api/prices/',
+                                 data=files,
+                                 follow_redirects=True,
+                                 content_type='multipart/form-data')
+                test_file.close()
+            self.assertEqual(rv.status_code, HTTPStatus.OK)
+
+            rv = client.get('/api/prices/categories')
+            self.assertEqual(rv.status_code, HTTPStatus.OK)
+
+
+
     def tearDown(self):
         db.session.remove()
         db.drop_all()
