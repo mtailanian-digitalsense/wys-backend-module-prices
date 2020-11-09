@@ -6,8 +6,10 @@ from functools import wraps
 from http import HTTPStatus
 
 import jwt
+import json
 import pandas as pd
 from flask import Flask, jsonify, abort, request
+import requests
 from flask_cors import CORS
 from flask_sqlalchemy import SQLAlchemy
 from flask_swagger import swagger
@@ -28,6 +30,10 @@ PROJECTS_MODULE_HOST = os.getenv('PROJECTS_MODULE_HOST', '127.0.0.1')
 PROJECTS_MODULE_PORT = os.getenv('PROJECTS_MODULE_PORT', 5000)
 PROJECTS_MODULE_API = os.getenv('PROJECTS_MODULE_API', '/api/projects/')
 PROJECTS_URL = f"http://{PROJECTS_MODULE_HOST}:{PROJECTS_MODULE_PORT}"
+
+SPACES_MODULE_HOST = os.getenv('SPACES_MODULE_HOST', '127.0.0.1')
+SPACES_MODULE_PORT = os.getenv('SPACES_MODULE_PORT', 5002)
+SPACES_MODULE_API = os.getenv('SPACES_MODULE_API', '/api/spaces/')
 
 # Flask Configurations
 app = Flask(__name__)
@@ -116,6 +122,7 @@ class PriceCategory(db.Model):
     def serialize(self):
         return jsonify(self.to_dict())
 
+
 class PriceGen(db.Model):
     """
     id:  Id primary key
@@ -139,9 +146,18 @@ class PriceValue(db.Model):
     low = db.Column(db.Float, nullable=False, default=0.0)
     medium = db.Column(db.Float, nullable=False, default=0.0)
     high = db.Column(db.Float, nullable=False, default=0.0)
-    module_id = db.Column(db.Integer, db.ForeignKey('price_module.id'), nullable=True)
-    country_id = db.Column(db.Integer, db.ForeignKey('price_country.id'), nullable=True)
-    category_id = db.Column(db.Integer, db.ForeignKey('price_category.id'), nullable=True)
+    module_id = db.Column(
+        db.Integer,
+        db.ForeignKey('price_module.id'),
+        nullable=True)
+    country_id = db.Column(
+        db.Integer,
+        db.ForeignKey('price_country.id'),
+        nullable=True)
+    category_id = db.Column(
+        db.Integer,
+        db.ForeignKey('price_category.id'),
+        nullable=True)
 
 
 class PriceCountry(db.Model):
@@ -157,7 +173,16 @@ class PriceCountry(db.Model):
                              backref="price_country",
                              cascade="all, delete, delete-orphan")
 
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'name': self.name,
+            'default': self.default,
+        }
+
+
 db.create_all()
+
 
 def token_required(f):
     @wraps(f)
@@ -183,7 +208,8 @@ def token_required(f):
         except Exception as err:
             return jsonify({'message': 'token is invalid', 'error': err})
         except KeyError as kerr:
-            return jsonify({'message': 'Can\'t find user_id in token', 'error': kerr})
+            return jsonify(
+                {'message': 'Can\'t find user_id in token', 'error': kerr})
 
         return f(*args, **kwargs)
 
@@ -239,7 +265,8 @@ def upload_prices():
     if not (filename_split[-1] == constants.VALID_EXTENSIONS_XLS or
             filename_split[-1] == constants.VALID_EXTENSIONS_XLSX):
         logging.warning(f'{filename_split[-1]} is not a valid extension')
-        return {'message': f'{filename_split[-1]} is not a valid extension'}, 420
+        return {
+            'message': f'{filename_split[-1]} is not a valid extension'}, 420
 
     # Read sheets names as country name
     sheets: dict = pd.read_excel(file, None)
@@ -249,7 +276,8 @@ def upload_prices():
     # For Each sheet
     for country_name in sheets:
         try:
-            # If country exist take id, else, create a new country and take the new id
+            # If country exist take id, else, create a new country and take the
+            # new id
             country: PriceCountry = PriceCountry.query \
                 .filter(PriceCountry.name == country_name.upper()) \
                 .first()
@@ -277,7 +305,8 @@ def upload_prices():
             module_name = row[1][constants.ROW_MODULO]
             if module_name not in modules_hash:
                 logging.debug(module_name)
-                module: PriceModule = PriceModule.query.filter(PriceModule.name == module_name).first()
+                module: PriceModule = PriceModule.query.filter(
+                    PriceModule.name == module_name).first()
                 module_id: int
                 if module is None:
                     try:
@@ -290,14 +319,15 @@ def upload_prices():
                     except Exception as exp:
                         logging.error(f"Database error. {exp}")
                         db.session.rollback()
-                        return jsonify({'message': f"Database error. {exp}"}), 500
+                        return jsonify(
+                            {'message': f"Database error. {exp}"}), 500
 
             # Read Column "PARAMETRO" and find a "PriceCategory"
             category_name = row[1][constants.ROW_PARAMETRO]
             if category_name not in category_hash:
-                category: PriceCategory = PriceCategory.query\
-                                                       .filter(PriceCategory.name == category_name)\
-                                                       .first()
+                category: PriceCategory = PriceCategory.query \
+                    .filter(PriceCategory.name == category_name) \
+                    .first()
 
                 # If PriceCategory exist get id else create and get the id.
                 if category is None:
@@ -312,8 +342,8 @@ def upload_prices():
                     except Exception as exp:
                         logging.error(f'Database error. {exp}')
                         db.session.rollback()
-                        return jsonify({'message': f"Database error. {exp}"}), 500
-
+                        return jsonify(
+                            {'message': f"Database error. {exp}"}), 500
 
             # Read columns "ESTANDAR BAJO", "ESTANDAR MEDIO", "ESTANDAR ALTO".
             try:
@@ -328,7 +358,8 @@ def upload_prices():
                 return jsonify({"message": msg}), 421
 
             # Get a price value by PriceCountry, PriceCategory and PriceModule. If Exist
-            # get Object else, create a new object. Update or create the values low, medium and high.
+            # get Object else, create a new object. Update or create the values
+            # low, medium and high.
             module_id = modules_hash[module_name].id
             category_id = category_hash[category_name].id
 
@@ -336,10 +367,10 @@ def upload_prices():
             category = category_hash[category_name]
 
             try:
-                value = PriceValue.query.filter(PriceValue.module_id == modules_hash[module_name].id)\
-                                    .filter(PriceValue.country_id == country_id)\
-                                    .filter(PriceValue.category_id == category_id)\
-                                    .first()
+                value = PriceValue.query.filter(
+                    PriceValue.module_id == modules_hash[module_name].id) .filter(
+                    PriceValue.country_id == country_id) .filter(
+                    PriceValue.category_id == category_id) .first()
             except Exception as exp:
                 logging.error(f"Database error {exp}")
                 return jsonify({'message': f"Database error {exp}"}), 500
@@ -372,7 +403,8 @@ def upload_prices():
     # Return status
     return jsonify({'status': 'OK'})
 
-@app.route('/api/prices/categories', methods=['GET'])
+
+@app.route('/api/prices/create', methods=['GET'])
 def get_categories():
     """
         Get Categories
@@ -387,11 +419,20 @@ def get_categories():
             500:
               description: Database or Internal Server error
     """
-    # Query all Categories en DB.
-    categories: [] = PriceCategory.query.all()
+    try:
+        # Query all Categories en DB.
+        categories: [] = PriceCategory.query.all()
+        countries: [] = PriceCountry.query.all()
+
+    except Exception as exp:
+        logging.error(f"Database error {exp}")
+        return jsonify({'message': f"Database error {exp}"}), 500
 
     cat: PriceCategory
-    return jsonify([cat.to_dict() for cat in categories])
+    return jsonify({
+        'categories': [cat.to_dict() for cat in categories],
+        'countries': [country.to_dict() for country in countries]
+    })
 
 
 @app.route('/api/prices', methods=['POST'])
@@ -412,6 +453,8 @@ def get_estimated_price():
           name: "body"
           required:
           - categories
+          - workspaces
+          - country
           properties:
             categories:
                 type: array
@@ -429,16 +472,129 @@ def get_estimated_price():
                             type: string
                             description: Category Name
                         type:
-                            type: char
+                            type: string
                             description: Type of question ('A' or 'B')
                         resp:
                             type: string
                             description: Response for this category
                             enum: [low, normal, high]
+            workspaces:
+                type: array
+                items:
+                    type: object
+                    properties:
+                        id:
+                            type: integer
+                            description: Unique id
+                        m2_gen_id:
+                            type: integer
+                            description: m2_gen_id
+                        observation:
+                            type: integer
+                            description: observation
+                        quantity:
+                            type: integer
+                            description: quantity
+                        space_id:
+                            type: integer
+                            description: space_id
+            country:
+                type: string
+
+
 
     """
+    # Check JSON Input
+    params = {
+        'categories',
+        'workspaces',
+        'country'
+    }
 
-    return jsonify({'value': random.randrange(1000,20000,1)})
+    for param in params:
+        if param not in request.json:
+            logging.error(f'{param} not in body')
+            return jsonify({'message': f'{param} not in body'}), \
+                HTTPStatus.BAD_REQUEST
+
+    try:
+        workspaces: [] = request.json['workspaces']
+        categories: [] = request.json['categories']
+
+    except Exception as exp:
+        logging.error(exp)
+        return {'message': f'{exp}'}, \
+            HTTPStatus.BAD_REQUEST
+
+    spaces = {}
+
+    # Get all spaces.
+    for _space in workspaces:
+        try:
+            token = request.headers.get('Authorization', None)
+            headers = {'Authorization': token}
+            resp = requests.get(
+                f'http://{SPACES_MODULE_HOST}:{SPACES_MODULE_PORT}{SPACES_MODULE_API}'
+                f'/{_space["space_id"]}', headers=headers)
+            space = json.loads(resp.content.decode('utf-8'))
+            spaces[space['id']] = space['name']
+
+        except Exception as exp:
+            logging.error(f"Error getting spaces {exp}")
+            return f"Error getting spaces {exp}", 500
+
+    # ---------------- Calc total price -------------------------
+
+    # Get Country id
+    country_name = request.json['country']
+    country: PriceCountry = PriceCountry.query.filter(
+        PriceCountry.name == country_name).first()
+    if country is None:
+        return f'{country_name} is a invalid country'
+
+    # Find prices according to space
+    space_category_prices = {}
+    for _space in workspaces:
+        space_name = spaces[_space['space_id']]
+        # Get PriceModule id
+        price_module: PriceModule = PriceModule.query.filter(
+            PriceModule.name == space_name).first()
+
+        # Get all prices and save in a map:
+        prices = PriceValue.query.filter(PriceValue.country_id == country.id) \
+            .filter(PriceValue.module_id == price_module.id)
+        category_prices = {}
+        price: PriceValue
+
+        for price in prices:
+            category_prices[price.category_id] = {
+                'low': price.low,
+                'normal': price.medium,
+                'high': price.high
+            }
+
+        space_category_prices[_space['space_id']] = category_prices
+
+    final_value = 0
+
+    # iterate in categories and find prices
+    for category in categories:
+        cat_id = category['id']
+        cat_resp = category['resp']
+        for _space in workspaces:
+            space_id = _space['space_id']
+            final_value += (space_category_prices[space_id]
+                            [cat_id][cat_resp]) * _space['quantity']
+
+    # Add Base costs
+    base_value: PriceValue = PriceValue.query.filter(
+        PriceModule.name == 'BASE').first()
+    if base_value is None:
+        logging.error("Check Base Values")
+        return jsonify({'value': final_value})
+    final_value += base_value.medium
+
+    return jsonify({'value': final_value})
 
 
 if __name__ == '__main__':
