@@ -319,8 +319,9 @@ def upload_prices():
                     except Exception as exp:
                         logging.error(f"Database error. {exp}")
                         db.session.rollback()
-                        return jsonify(
-                            {'message': f"Database error. {exp}"}), 500
+                        return jsonify({'message': f"Database error. {exp}"}), 500
+                else:
+                    modules_hash[module_name] = module
 
             # Read Column "PARAMETRO" and find a "PriceCategory"
             category_name = row[1][constants.ROW_PARAMETRO]
@@ -342,8 +343,9 @@ def upload_prices():
                     except Exception as exp:
                         logging.error(f'Database error. {exp}')
                         db.session.rollback()
-                        return jsonify(
-                            {'message': f"Database error. {exp}"}), 500
+                        return jsonify({'message': f"Database error. {exp}"}), 500
+                else:
+                    category_hash[category_name] = category
 
             # Read columns "ESTANDAR BAJO", "ESTANDAR MEDIO", "ESTANDAR ALTO".
             try:
