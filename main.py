@@ -561,7 +561,10 @@ def get_estimated_price():
         # Get PriceModule id
         price_module: PriceModule = PriceModule.query.filter(
             PriceModule.name == space_name).first()
-
+        if price_module is None:
+            logging.warning(f'No space name: {space_name}')
+            workspaces.remove(_space)
+            continue
         # Get all prices and save in a map:
         prices = PriceValue.query.filter(PriceValue.country_id == country.id) \
             .filter(PriceValue.module_id == price_module.id)
@@ -581,12 +584,17 @@ def get_estimated_price():
 
     # iterate in categories and find prices
     for category in categories:
+        if category['code'] == 'BASE':
+            continue
         cat_id = category['id']
         cat_resp = category['resp']
         for _space in workspaces:
             space_id = _space['space_id']
-            final_value += (space_category_prices[space_id]
+            if space_id in space_category_prices:
+                final_value += (space_category_prices[space_id]
                             [cat_id][cat_resp]) * _space['quantity']
+            else:
+                logging.warning(f"Not valid space_id: {_space['space_id']}")
 
     # Add Base costs
     base_value: PriceValue = PriceValue.query.filter(
