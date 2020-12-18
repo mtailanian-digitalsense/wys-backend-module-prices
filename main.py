@@ -546,7 +546,6 @@ def get_estimated_price():
             return f"Error getting spaces {exp}", 500
 
     # ---------------- Calc total price -------------------------
-
     # Get Country id
     country_name = request.json['country']
     country: PriceCountry = PriceCountry.query.filter(
@@ -556,29 +555,33 @@ def get_estimated_price():
 
     # Find prices according to space
     space_category_prices = {}
-    for _space in workspaces:
-        space_name = spaces[_space['space_id']]
+    #for _space in workspaces:
+    i=0
+    while i<len(workspaces):
+        space_name = spaces[workspaces[i]['space_id']]
         # Get PriceModule id
         price_module: PriceModule = PriceModule.query.filter(
             PriceModule.name == space_name).first()
         if price_module is None:
             logging.warning(f'No space name: {space_name}')
-            workspaces.remove(_space)
-            continue
-        # Get all prices and save in a map:
-        prices = PriceValue.query.filter(PriceValue.country_id == country.id) \
-            .filter(PriceValue.module_id == price_module.id)
-        category_prices = {}
-        price: PriceValue
+            workspaces.remove(workspaces[i])
+            i=i-1
+        else:
+            # Get all prices and save in a map:
+            prices = PriceValue.query.filter(PriceValue.country_id == country.id) \
+                .filter(PriceValue.module_id == price_module.id)
+            category_prices = {}
+            price: PriceValue
 
-        for price in prices:
-            category_prices[price.category_id] = {
-                'low': price.low,
-                'normal': price.medium,
-                'high': price.high
-            }
+            for price in prices:
+                category_prices[price.category_id] = {
+                    'low': price.low,
+                    'normal': price.medium,
+                    'high': price.high
+                }
 
-        space_category_prices[_space['space_id']] = category_prices
+            space_category_prices[workspaces[i]['space_id']] = category_prices
+        i=i+1
 
     final_value = 0
 
