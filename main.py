@@ -158,6 +158,11 @@ class PriceValue(db.Model):
         db.Integer,
         db.ForeignKey('price_category.id'),
         nullable=True)
+    price_value_id = db.Column(
+        db.Integer,
+        db.ForeignKey('price_value.id'),
+        nullable=True
+    )
 
 
 class PriceCountry(db.Model):
