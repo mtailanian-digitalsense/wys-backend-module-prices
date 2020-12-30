@@ -129,13 +129,13 @@ class PriceGen(db.Model):
     """
     id:  Id primary key
     project_id: Project ID that you want to save this configurations
-    value: Enum that indicate if the value to consider is LOW, MEDIUM or HIGH
+    value: Value of de PROJECT
     """
 
     id = db.Column(db.Integer, primary_key=True)
-    project_id = db.Column(db.Integer, nullable=False)
-    value = db.Column(db.Enum(RequirementsEnum), nullable=False)
-
+    project_id = db.Column(db.Integer, nullable=False, unique=True)
+    value = db.Column(db.Float, nullable=False, default=0.0)
+    
 
 class PriceValue(db.Model):
     """
@@ -589,6 +589,88 @@ def get_categories():
         'countries': [country.to_dict() for country in countries]
     })
 
+
+@app.route('/api/prices/save', methods=['POST'])
+def save_prices():
+    """
+        Save prices
+        ---
+        consumes:
+        - "application/json"
+        tags:
+        - Prices
+        produces:
+        - application/json
+        required:
+            - project_id
+            - value
+            - country
+            - categories
+            - workspaces
+        parameters:
+        - in: body
+          name: body
+          properties:
+            project_id:
+                type: number
+                format: integer
+            value:
+                type: number
+                format: float
+            categories:
+                type: array
+                items:
+                    type: object
+                    properties:
+                        id:
+                            type: integer
+                            description: Unique id
+                        code:
+                            type: string
+                            description: Category code
+
+                        name:
+                            type: string
+                            description: Category Name
+                        type:
+                            type: string
+                            description: Type of question ('A' or 'B')
+                        resp:
+                            type: string
+                            description: Response for this category
+                            enum: [low, normal, high]
+            workspaces:
+                type: array
+                items:
+                    type: object
+                    properties:
+                        id:
+                            type: integer
+                            description: Unique id
+                        m2_gen_id:
+                            type: integer
+                            description: m2_gen_id
+                        observation:
+                            type: integer
+                            description: observation
+                        quantity:
+                            type: integer
+                            description: quantity
+                        space_id:
+                            type: integer
+                            description: space_id
+            country:
+                type: string
+        responses:
+            400:
+                description: Data or missing field in body.
+            404:
+                description: Data object not found.
+            500:
+                description: Internal server error.
+    """
+    # Return status
+    return jsonify({'status': 'OK'})
 
 @app.route('/api/prices', methods=['POST'])
 @token_required
