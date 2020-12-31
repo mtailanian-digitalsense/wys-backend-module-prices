@@ -491,20 +491,6 @@ def upload_prices():
                     db.session.add(country)
                     db.session.commit()
 
-<<<<<<< HEAD
-                country_id = country.id
-
-            except Exception as exp:
-                logging.error(f"Error in database {exp}")
-                db.session.rollback()
-                return jsonify({'message': f"Error in database {exp}"}), 500
-
-            modules_hash = {}
-            category_hash = {}
-
-            for row in sheets[country_name].iterrows():
-                # Read Column "MODULO" and find Module by name
-=======
         modules_hash = {}
         category_hash = {}
         subcategory_hash = {}
@@ -521,16 +507,11 @@ def upload_prices():
             # Carga de costos variables
             # Read Column "MODULO" and find Module by name
             if not is_base:
->>>>>>> master
                 module_name = row[1][constants.ROW_MODULO]
                 if module_name not in modules_hash:
                     logging.debug(module_name)
                     module: PriceModule = PriceModule.query.filter(
                         PriceModule.name == module_name).first()
-<<<<<<< HEAD
-                    module_id: int
-=======
->>>>>>> master
                     if module is None:
                         try:
                             module = PriceModule()
@@ -545,11 +526,6 @@ def upload_prices():
                             return jsonify({'message': f"Database error. {exp}"}), 500
                     else:
                         modules_hash[module_name] = module
-<<<<<<< HEAD
-
-                # Read Column "PARAMETRO" and find a "PriceCategory"
-=======
->>>>>>> master
                 category_name = row[1][constants.ROW_PARAMETRO]
                 if category_name not in category_hash:
                     category: PriceCategory = PriceCategory.query \
@@ -590,40 +566,6 @@ def upload_prices():
                 # low, medium and high.
                 module_id = modules_hash[module_name].id
                 category_id = category_hash[category_name].id
-<<<<<<< HEAD
-
-                module = modules_hash[module_name]
-                category = category_hash[category_name]
-
-                try:
-                    value = PriceValue.query.filter(
-                        PriceValue.module_id == modules_hash[module_name].id) .filter(
-                        PriceValue.country_id == country_id) .filter(
-                        PriceValue.category_id == category_id) .first()
-                except Exception as exp:
-                    logging.error(f"Database error {exp}")
-                    return jsonify({'message': f"Database error {exp}"}), 500
-
-                if value is None:
-                    value = PriceValue()
-                    try:
-                        country.values.append(value)
-                        db.session.commit()
-                        category.values.append(value)
-                        db.session.commit()
-                        module.values.append(value)
-                        db.session.commit()
-                    except Exception as exp:
-                        logging.error(f"Database error {exp}")
-                        return jsonify({'message': f"Database error {exp}"}), 500
-
-                value.low = low
-                value.medium = medium
-                value.high = high
-
-                # commit database
-                try:
-=======
 
                 module = modules_hash[module_name]
                 category = category_hash[category_name]
@@ -661,18 +603,12 @@ def upload_prices():
                     db.session.commit()
                     if not is_base:
                         module.values.append(value)
->>>>>>> master
                     db.session.commit()
                 except Exception as exp:
                     db.session.rollback()
                     logging.error(f"Database error {exp}")
                     return jsonify({'message': f"Database error {exp}"}), 500
 
-<<<<<<< HEAD
-        # Return status
-        return jsonify({'status': 'OK'})
-        
-=======
             category_low_value += low
             category_medium_value += medium
             category_high_value += high
@@ -691,7 +627,6 @@ def upload_prices():
                 return jsonify({'message': f"Database error {exp}"}), 500
         # Return status
         return jsonify({'status': 'OK'})
->>>>>>> master
     except SQLAlchemyError as e:
         return f'Database error  f{e}', 500
     except XLRDError as exc:
