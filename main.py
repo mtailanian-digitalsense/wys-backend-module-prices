@@ -333,14 +333,13 @@ def upload_design_prices():
         filename: str = file.filename
 
         filename_split: [] = filename.split('.')
-
         if not (filename_split[-1] == constants.VALID_EXTENSIONS_XLSX):
             logging.warning(f'{filename_split[-1]} is not a valid extension')
             return {
                 'message': f'{filename_split[-1]} is not a valid extension'}, 420
 
         # Read sheets names as country name
-        
+            
         sheets: dict = pd.read_excel(file, None, engine='openpyxl')
 
         logging.debug(sheets)
@@ -379,7 +378,7 @@ def upload_design_prices():
                 try:
                     design_category = row[1][1]
                     price_design_category = float(row[1][2])
-                
+                    
                     country_design_prices[country_id].append([design_category,price_design_category])
 
                 except Exception as exp:
@@ -427,10 +426,9 @@ def upload_design_prices():
                 db.session.rollback()
                 logging.error(f"Database error {exp}")
                 return jsonify({'message': f"Database error {exp}"}), 500
-            
+                
         # Return status
         return jsonify({'status': 'OK'})
-    
     except SQLAlchemyError as e:
         return f'Database error  f{e}', 500
     except XLRDError as exc:
@@ -438,7 +436,7 @@ def upload_design_prices():
     except Exception as exp:
         app.logger.error(f"Error: mesg ->{exp}")
         return jsonify({'message': exp}), 500
-
+     
 @app.route('/api/prices/upload', methods=['POST'])
 def upload_prices():
     """
