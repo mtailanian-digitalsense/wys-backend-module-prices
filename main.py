@@ -1150,10 +1150,6 @@ def get_estimated_price():
             else:
                 final_value += (space_category_prices[-1]
                         [cat_id][cat_resp])
-<<<<<<< HEAD
-
-=======
->>>>>>> gmt
                 logging.warning(f"Not valid space_id: {_space['space_id']}")
 
     # Add Base costs
