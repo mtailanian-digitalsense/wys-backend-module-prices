@@ -38,6 +38,11 @@ SPACES_MODULE_HOST = os.getenv('SPACES_MODULE_HOST', '127.0.0.1')
 SPACES_MODULE_PORT = os.getenv('SPACES_MODULE_PORT', 5002)
 SPACES_MODULE_API = os.getenv('SPACES_MODULE_API', '/api/spaces/')
 
+TIMES_MODULE_HOST = os.getenv('TIMES_MODULE_HOST', '127.0.0.1')
+TIMES_MODULE_PORT = os.getenv('TIMES_MODULE_PORT', 5007)
+TIMES_MODULE_API = os.getenv('TIMES_MODULE_API', '/api/times')
+TIMES_URL = f"http://{TIMES_MODULE_HOST}:{TIMES_MODULE_PORT}"
+
 # Flask Configurations
 app = Flask(__name__)
 CORS(app)
@@ -109,21 +114,29 @@ class PriceCategory(db.Model):
     code = db.Column(db.String(100), nullable=False)
     name = db.Column(db.String(100), nullable=True)
     type = db.Column(db.CHAR, nullable=False, default='A')
+    parent_category_id = db.Column(db.Integer, db.ForeignKey('price_category.id'))
+    subcategories = db.relationship("PriceCategory",
+                 backref=db.backref('price_category', remote_side=[id]),
+                 cascade="all, delete, delete-orphan"
+                ) 
     values = db.relationship("PriceValue",
                              backref="price_category",
                              cascade="all, delete, delete-orphan")
 
-    def to_dict(self):
+    def to_dict(self, full=False):
         obj_dict = {
             'id': self.id,
             'code': self.code,
             'name': self.name,
             'type': self.type
         }
+        if full:
+            obj_dict['parent_category_id'] = self.parent_category_id
+            obj_dict['subcategories'] = [subcategory.to_dict() for subcategory in self.subcategories]
         return obj_dict
 
-    def serialize(self):
-        return jsonify(self.to_dict())
+    def serialize(self, full=False):
+        return jsonify(self.to_dict(full))
 
 
 class PriceGen(db.Model):
@@ -161,6 +174,21 @@ class PriceValue(db.Model):
         db.Integer,
         db.ForeignKey('price_category.id'),
         nullable=True)
+
+    def to_dict(self):
+        obj_dict = {
+            'id': self.id,
+            'low': self.low,
+            'medium': self.medium,
+            'high': self.high,
+            'module_id': self.module_id,
+            'country_id': self.country_id,
+            'category_id': self.category_id
+        }
+        return obj_dict
+
+    def serialize(self):
+        return jsonify(self.to_dict())
 
 class PriceDesign(db.Model):
     """
@@ -238,6 +266,27 @@ def token_required(f):
     return decorator
 
 
+def get_project_weeks(m2, token):
+    try:
+        headers = {'Authorization': token}
+        data = {
+            "adm_agility": "normal",
+            "client_agility": "normal",
+            "construction_mod": "const_adm",
+            "constructions_times": "daytime",
+            "demolitions": "no",
+            "m2": m2,
+            "mun_agility": "normal",
+            "procurement_process": "direct"
+        }
+        resp = requests.post(
+            f'{TIMES_URL}{TIMES_MODULE_API}', headers=headers, json=data)
+        resp_data = json.loads(resp.text)
+        return resp_data['weeks']
+    except Exception as exp:
+        logging.error(f"Error getting spaces {exp}")
+        return f"Error getting spaces {exp}", 500
+
 @app.route("/api/prices/spec", methods=['GET'])
 @token_required
 def spec():
@@ -252,6 +301,7 @@ def spec():
 
 
 @app.route('/api/prices/design/upload', methods=['POST'])
+@token_required
 def upload_design_prices():
     """
         Upload/Update Design Prices
@@ -381,6 +431,7 @@ def upload_design_prices():
     return jsonify({'status': 'OK'})
 
 @app.route('/api/prices/upload', methods=['POST'])
+@token_required
 def upload_prices():
     """
         Upload/Update Prices
@@ -440,6 +491,7 @@ def upload_prices():
                     db.session.add(country)
                     db.session.commit()
 
+<<<<<<< HEAD
                 country_id = country.id
 
             except Exception as exp:
@@ -452,12 +504,33 @@ def upload_prices():
 
             for row in sheets[country_name].iterrows():
                 # Read Column "MODULO" and find Module by name
+=======
+        modules_hash = {}
+        category_hash = {}
+        subcategory_hash = {}
+
+        last_category_name = None
+        category_low_value = 0
+        category_medium_value = 0
+        category_high_value = 0
+
+        for row in sheets[country_name].iterrows():
+            is_base = False
+            if row[1][constants.ROW_PRE] == 'BASE':
+                is_base = True
+            # Carga de costos variables
+            # Read Column "MODULO" and find Module by name
+            if not is_base:
+>>>>>>> master
                 module_name = row[1][constants.ROW_MODULO]
                 if module_name not in modules_hash:
                     logging.debug(module_name)
                     module: PriceModule = PriceModule.query.filter(
                         PriceModule.name == module_name).first()
+<<<<<<< HEAD
                     module_id: int
+=======
+>>>>>>> master
                     if module is None:
                         try:
                             module = PriceModule()
@@ -472,8 +545,11 @@ def upload_prices():
                             return jsonify({'message': f"Database error. {exp}"}), 500
                     else:
                         modules_hash[module_name] = module
+<<<<<<< HEAD
 
                 # Read Column "PARAMETRO" and find a "PriceCategory"
+=======
+>>>>>>> master
                 category_name = row[1][constants.ROW_PARAMETRO]
                 if category_name not in category_hash:
                     category: PriceCategory = PriceCategory.query \
@@ -514,6 +590,7 @@ def upload_prices():
                 # low, medium and high.
                 module_id = modules_hash[module_name].id
                 category_id = category_hash[category_name].id
+<<<<<<< HEAD
 
                 module = modules_hash[module_name]
                 category = category_hash[category_name]
@@ -546,15 +623,75 @@ def upload_prices():
 
                 # commit database
                 try:
+=======
+
+                module = modules_hash[module_name]
+                category = category_hash[category_name]
+
+                try:
+                    value = PriceValue.query.filter(
+                        PriceValue.module_id == modules_hash[module_name].id) .filter(
+                        PriceValue.country_id == country_id) .filter(
+                        PriceValue.category_id == category_id) .first()
+                except Exception as exp:
+                    logging.error(f"Database error {exp}")
+                    return jsonify({'message': f"Database error {exp}"}), 500
+
+                if value is None:
+                    value = PriceValue()
+                    try:
+                        country.values.append(value)
+                        db.session.commit()
+                        category.values.append(value)
+                        db.session.commit()
+                        module.values.append(value)
+                        db.session.commit()
+                    except Exception as exp:
+                        logging.error(f"Database error {exp}")
+                        return jsonify({'message': f"Database error {exp}"}), 500
+
+                value.low = low
+                value.medium = medium
+                value.high = high
+
+                # commit database
+                    country.values.append(value)
+                    db.session.commit()
+                    subcategory.values.append(value)
+                    db.session.commit()
+                    if not is_base:
+                        module.values.append(value)
+>>>>>>> master
                     db.session.commit()
                 except Exception as exp:
                     db.session.rollback()
                     logging.error(f"Database error {exp}")
                     return jsonify({'message': f"Database error {exp}"}), 500
 
+<<<<<<< HEAD
         # Return status
         return jsonify({'status': 'OK'})
         
+=======
+            category_low_value += low
+            category_medium_value += medium
+            category_high_value += high
+
+            value.low = low
+            value.medium = medium
+            value.high = high
+            
+            last_category_name = category_name
+            # commit database
+            try:
+                db.session.commit()
+            except Exception as exp:
+                db.session.rollback()
+                logging.error(f"Database error {exp}")
+                return jsonify({'message': f"Database error {exp}"}), 500
+        # Return status
+        return jsonify({'status': 'OK'})
+>>>>>>> master
     except SQLAlchemyError as e:
         return f'Database error  f{e}', 500
     except XLRDError as exc:
@@ -565,6 +702,7 @@ def upload_prices():
 
 
 @app.route('/api/prices/create', methods=['GET'])
+@token_required
 def get_categories():
     """
         Get Categories
@@ -581,7 +719,7 @@ def get_categories():
     """
     try:
         # Query all Categories en DB.
-        categories: [] = PriceCategory.query.all()
+        categories: [] = PriceCategory.query.filter(PriceCategory.parent_category_id == None).all()
         countries: [] = PriceCountry.query.all()
 
     except Exception as exp:
@@ -596,6 +734,7 @@ def get_categories():
 
 
 @app.route('/api/prices/save', methods=['POST'])
+@token_required
 def save_prices():
     """
         Save prices
@@ -861,6 +1000,9 @@ def get_estimated_price():
                             description: space_id
             country:
                 type: string
+            m2:
+                type: number
+                format: float
 
 
 
@@ -869,7 +1011,8 @@ def get_estimated_price():
     params = {
         'categories',
         'workspaces',
-        'country'
+        'country',
+        'm2'
     }
 
     for param in params:
@@ -890,9 +1033,9 @@ def get_estimated_price():
     spaces = {}
   
     # Get all spaces.
+    token = request.headers.get('Authorization', None)
     for _space in workspaces:
         try:
-            token = request.headers.get('Authorization', None)
             headers = {'Authorization': token}
             resp = requests.get(
                 f'http://{SPACES_MODULE_HOST}:{SPACES_MODULE_PORT}{SPACES_MODULE_API}'
@@ -941,21 +1084,60 @@ def get_estimated_price():
 
             space_category_prices[workspaces[i]['space_id']] = category_prices
         i=i+1
+    
+    base_category_prices = {}
+    # Get all base prices and save in a map:
+    base_prices = PriceValue.query.filter(PriceValue.country_id == country.id) \
+        .filter(PriceValue.module_id == None)
+    base_price: PriceValue
+
+    for base_price in base_prices:
+        base_category_prices[base_price.category_id] = {
+            'low': base_price.low,
+            'normal': base_price.medium,
+            'high': base_price.high
+        }
+    space_category_prices[-1] = base_category_prices
 
     final_value = 0
-
+    m2 = request.json['m2']
+    weeks = get_project_weeks(m2, token)
     # iterate in categories and find prices
     for category in categories:
-        if category['code'] == 'BASE':
-            continue
         cat_id = category['id']
         cat_resp = category['resp']
-        for _space in workspaces:
-            space_id = _space['space_id']
-            if space_id in space_category_prices:
-                final_value += (space_category_prices[space_id]
-                            [cat_id][cat_resp]) * _space['quantity']
+        cat_name = category['name']
+        
+        if category['code'] != 'BASE':
+            for _space in workspaces:
+                space_id = _space['space_id']
+                if space_id in space_category_prices:
+                    final_value += (space_category_prices[space_id]
+                                [cat_id][cat_resp]) * _space['quantity']
+                else:
+                    logging.warning(f"Not valid space_id: {_space['space_id']}")
+        else:
+            calc_type = ''
+            div_factor = 1
+            if cat_name in constants.BASES_CALC:
+                calc_type = constants.BASES_CALC[cat_name]
+                calc_type = calc_type.split('/')
+                if len(calc_type) > 1:
+                    div_factor = float(calc_type[1])
+                calc_type = calc_type[0]
+
+            if calc_type == 'm2':
+                final_value += (space_category_prices[-1]
+                        [cat_id][cat_resp]*(m2/div_factor))
+            elif calc_type == 'weeks':
+                final_value += (space_category_prices[-1]
+                        [cat_id][cat_resp]*weeks)
             else:
+<<<<<<< HEAD
+                final_value += (space_category_prices[-1]
+                        [cat_id][cat_resp])
+
+=======
                 logging.warning(f"Not valid space_id: {_space['space_id']}")
 
     # Add Base costs
@@ -966,6 +1148,10 @@ def get_estimated_price():
         return jsonify({'value': final_value})
     final_value += base_value.medium
     
+<<<<<<< HEAD
+=======
+>>>>>>> gmt
+>>>>>>> master
     return jsonify({'value': final_value})
 
 
