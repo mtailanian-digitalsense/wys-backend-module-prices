@@ -623,7 +623,7 @@ def upload_prices():
                         try:
                             subcategory = PriceCategory()
                             subcategory.name = subcategory_name
-                            subcategory.code = subcategory_name
+                            subcategory.code = subcategory_name if not is_base else 'BASE'
                             category.subcategories.append(subcategory)
                             db.session.add(subcategory)
                             db.session.commit()
@@ -637,7 +637,7 @@ def upload_prices():
                         subcategory_hash[subcategory_name] = subcategory
                 else:
                     subcategory: PriceCategory = PriceCategory.query \
-                        .filter(PriceCategory.code == subcategory_name) \
+                        .filter(PriceCategory.name == subcategory_name) \
                         .filter(PriceCategory.parent_category_id == category.id) \
                         .first()
             # Read columns "ESTANDAR BAJO", "ESTANDAR MEDIO", "ESTANDAR ALTO".
