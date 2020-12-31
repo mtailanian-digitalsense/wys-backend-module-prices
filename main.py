@@ -1139,11 +1139,8 @@ def get_estimated_price():
                 final_value += (space_category_prices[-1]
                         [cat_id][cat_resp]*weeks)
             else:
-<<<<<<< HEAD
                 final_value += (space_category_prices[-1]
                         [cat_id][cat_resp])
-
-=======
                 logging.warning(f"Not valid space_id: {_space['space_id']}")
 
     # Add Base costs
@@ -1154,10 +1151,6 @@ def get_estimated_price():
         return jsonify({'value': final_value})
     final_value += base_value.medium
     
-<<<<<<< HEAD
-=======
->>>>>>> gmt
->>>>>>> master
     return jsonify({'value': final_value})
 
 
