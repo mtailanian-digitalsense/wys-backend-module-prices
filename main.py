@@ -301,6 +301,7 @@ def spec():
 
 
 @app.route('/api/prices/design/upload', methods=['POST'])
+@token_required
 def upload_design_prices():
     """
         Upload/Update Design Prices
@@ -433,6 +434,7 @@ def upload_design_prices():
     return jsonify({'status': 'OK'})
 
 @app.route('/api/prices/upload', methods=['POST'])
+@token_required
 def upload_prices():
     """
         Upload/Update Prices
@@ -711,6 +713,7 @@ def upload_prices():
 
 
 @app.route('/api/prices/create', methods=['GET'])
+@token_required
 def get_categories():
     """
         Get Categories
@@ -742,6 +745,7 @@ def get_categories():
 
 
 @app.route('/api/prices/save', methods=['POST'])
+@token_required
 def save_prices():
     """
         Save prices
