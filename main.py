@@ -17,6 +17,7 @@ from flask_sqlalchemy import SQLAlchemy
 from flask_swagger import swagger
 from flask_swagger_ui import get_swaggerui_blueprint
 from sqlalchemy.ext.declarative import declarative_base
+from http import HTTPStatus
 
 import constants
 
@@ -55,7 +56,7 @@ swaggerui_blueprint = get_swaggerui_blueprint(
     SWAGGER_URL,
     API_URL,
     config={  # Swagger UI config overrides
-        'app_name': "WYS API - Times Service"
+        'app_name': "WYS API - Prices Service"
     }
 )
 app.register_blueprint(swaggerui_blueprint, url_prefix=SWAGGER_URL)
@@ -203,7 +204,7 @@ class PriceCountry(db.Model):
 
 
 db.create_all()
-
+db.session.commit()
 
 def token_required(f):
     @wraps(f)
@@ -595,10 +596,10 @@ def save_prices():
     """
         Save prices
         ---
-        consumes:
-        - "application/json"
         tags:
         - Prices
+        consumes:
+        - "application/json"
         produces:
         - application/json
         required:
@@ -669,6 +670,125 @@ def save_prices():
             500:
                 description: Internal server error.
     """
+
+     # Check JSON Input
+    params = {
+        'categories',
+        'country',
+        'project_id',
+        'value',
+        'workspaces'
+    }
+    pp = pprint.PrettyPrinter(indent=4)
+
+    for param in params:
+        if param not in request.json:
+            logging.error(f'{param} not in body')
+            return jsonify({'message': f'{param} not in body'}), \
+                HTTPStatus.BAD_REQUEST
+
+    try:
+        token = request.headers.get('Authorization', None)
+        headers = {'Authorization': token}
+        resp = requests.get(
+            f'{PROJECTS_URL}{PROJECTS_MODULE_API}'
+            f'/{request.json["project_id"]}', headers=headers)
+        project = json.loads(resp.content.decode('utf-8'))
+    except Exception as exp:
+        logging.error(f"Error getting Project {exp}")#cambiar mensaje de exp
+        return f"Error getting project {exp}", 500
+    
+    #saving PriceGen
+    try:
+        # If PriceGen exist take id, else, create a new PriceGen and take the
+        # new id
+        price_gen: PriceGen = PriceGen.query \
+            .filter(PriceGen.project_id == request.json["project_id"]) \
+            .first()
+
+        price_gen_id: int
+        if price_gen is None:
+            price_gen = PriceGen()
+            price_gen.project_id = request.json["project_id"]
+            db.session.add(country)
+            db.session.commit()
+
+        price_gen_id = price_gen.id
+
+    except Exception as exp:
+        logging.error(f"Error in database {exp}")
+        db.session.rollback()
+        return jsonify({'message': f"Error in database {exp}"}), 500
+    
+    #dictionary lists
+    try:
+        workspaces: [] = request.json['workspaces']
+        categories: [] = request.json['categories']
+
+    except Exception as exp:
+        logging.error(exp)
+        return {'message': f'{exp}'}, \
+            HTTPStatus.BAD_REQUEST
+
+    spaces = {}
+
+    # Get all spaces.
+    for _space in workspaces:
+        try:
+            token = request.headers.get('Authorization', None)
+            headers = {'Authorization': token}
+            resp = requests.get(
+                f'http://{SPACES_MODULE_HOST}:{SPACES_MODULE_PORT}{SPACES_MODULE_API}'
+                f'/{_space["space_id"]}', headers=headers)
+            space = json.loads(resp.content.decode('utf-8'))
+            spaces[space['id']] = space['name']
+
+        except Exception as exp:
+            logging.error(f"Error getting spaces {exp}")
+            return f"Error getting spaces {exp}", 500
+    
+    # Get Country id
+    country_name = request.json['country']
+    country: PriceCountry = PriceCountry.query.filter(
+        PriceCountry.name == country_name.upper()).first()
+    if country is None:
+        return f'{country_name} is a invalid country'
+    
+     # Find prices according to space
+    #space_category_prices = {}
+    #for _space in workspaces:
+    i=0
+    while i<len(workspaces):
+        space_name = spaces[workspaces[i]['space_id']]
+        # Get PriceModule id
+        price_module: PriceModule = PriceModule.query.filter(
+            PriceModule.name == space_name).first()
+        if price_module is None:
+            logging.warning(f'No space name: {space_name}')
+            workspaces.remove(workspaces[i])
+            i=i-1
+        
+        else:  
+            module_id = price_module.id
+            '''
+            # Get all prices and save in a map:
+            prices = PriceValue.query.filter(PriceValue.country_id == country.id) \
+                .filter(PriceValue.module_id == price_module.id)
+            category_prices = {}
+            price: PriceValue
+
+            for price in prices:
+                category_prices[price.category_id] = {
+                    'low': price.low,
+                    'normal': price.medium,
+                    'high': price.high
+                }
+
+            space_category_prices[workspaces[i]['space_id']] = category_prices
+            '''
+        i=i+1
+    pp.pprint(workspaces)
+ 
     # Return status
     return jsonify({'status': 'OK'})
 
@@ -764,7 +884,7 @@ def get_estimated_price():
             HTTPStatus.BAD_REQUEST
 
     spaces = {}
-
+  
     # Get all spaces.
     for _space in workspaces:
         try:
