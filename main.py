@@ -319,116 +319,125 @@ def upload_design_prices():
           required: true
           type: file
     """
-    ''' Verify that archive is a Excel spreadsheet (xls or xlsx)'''
-    # Check if the post request has the file part
-    if 'file' not in request.files:
-        abort(HTTPStatus.BAD_REQUEST, "No Multipart file found")
-    file = request.files['file']
+    try:
+        ''' Verify that archive is a Excel spreadsheet (xls or xlsx)'''
+        # Check if the post request has the file part
+        if 'file' not in request.files:
+            abort(HTTPStatus.BAD_REQUEST, "No Multipart file found")
+        file = request.files['file']
 
-    if file.filename == '':
-        logging.warning('No selected File')
-        return jsonify({'message': "No selected file"}), HTTPStatus.BAD_REQUEST
+        if file.filename == '':
+            logging.warning('No selected File')
+            return jsonify({'message': "No selected file"}), HTTPStatus.BAD_REQUEST
 
-    filename: str = file.filename
+        filename: str = file.filename
 
-    filename_split: [] = filename.split('.')
+        filename_split: [] = filename.split('.')
 
-    if not (filename_split[-1] == constants.VALID_EXTENSIONS_XLSX):
-        logging.warning(f'{filename_split[-1]} is not a valid extension')
-        return {
-            'message': f'{filename_split[-1]} is not a valid extension'}, 420
+        if not (filename_split[-1] == constants.VALID_EXTENSIONS_XLSX):
+            logging.warning(f'{filename_split[-1]} is not a valid extension')
+            return {
+                'message': f'{filename_split[-1]} is not a valid extension'}, 420
 
-    # Read sheets names as country name
-    
-    sheets: dict = pd.read_excel(file, None, engine='openpyxl')
-
-    logging.debug(sheets)
-
-    country_design_prices = {}
-
-    # For Each sheet
-    for country_name in sheets:
-        try:
-            # If country exist take id, else, create a new country and take the
-            # new id
-            country: PriceCountry = PriceCountry.query \
-                .filter(PriceCountry.name == country_name.upper()) \
-                .first()
-
-            country_id: int
-            if country is None:
-                country = PriceCountry()
-                country.name = country_name.upper()
-                country.code = country_name.upper()
-                db.session.add(country)
-                db.session.commit()
-
-            country_id = country.id
-
-        except Exception as exp:
-            logging.error(f"Error in database {exp}")
-            db.session.rollback()
-            return jsonify({'message': f"Error in database {exp}"}), 500
-
-        if country_id not in country_design_prices:
-            country_design_prices[country_id] = []
-
-        for row in sheets[country_name].iterrows():
-            #Read Column B and finds out the price design category
-            try:
-                design_category = row[1][1]
-                price_design_category = float(row[1][2])
-            
-                country_design_prices[country_id].append([design_category,price_design_category])
-
-            except Exception as exp:
-                msg = f"Error reading rows: {exp}"
-                logging.error(msg)
-                return jsonify({"message": msg}), 421
-
-        # Get a price design by PriceCountry. If Exist get Object else,
-        # create a new object. Update or create the values category_1,...,category_5.
-
-        try:
-            qr = PriceDesign.query.filter(
-                PriceDesign.country_id == country_id) .first()
-        except Exception as exp:
-            logging.error(f"Database error {exp}")
-            return jsonify({'message': f"Database error {exp}"}), 500
-
-        if qr is None:
-            try:
-                qr = PriceDesign()
-                qr.country_id = country_id
-                db.session.add(qr)
-                db.session.commit()
-            except Exception as exp:
-                logging.error(f'Database error. {exp}')
-                db.session.rollback()
-                return jsonify({'message': f"Database error. {exp}"}), 500
-
-        for category,value in country_design_prices[country_id]:
-            if category == constants.CATEGORY_1:
-                qr.category_1 = value
-            if category == constants.CATEGORY_2:
-                qr.category_2 = value
-            if category == constants.CATEGORY_3:
-                qr.category_3 = value
-            if category == constants.CATEGORY_4:
-                qr.category_4 = value
-            if category == constants.CATEGORY_5:
-                qr.category_5 = value
-
-        # commit database
-        try:
-            db.session.commit()
-        except Exception as exp:
-            db.session.rollback()
-            logging.error(f"Database error {exp}")
-            return jsonify({'message': f"Database error {exp}"}), 500
+        # Read sheets names as country name
         
-    # Return status
-    return jsonify({'status': 'OK'})
+        sheets: dict = pd.read_excel(file, None, engine='openpyxl')
+
+        logging.debug(sheets)
+
+        country_design_prices = {}
+
+        # For Each sheet
+        for country_name in sheets:
+            try:
+                # If country exist take id, else, create a new country and take the
+                # new id
+                country: PriceCountry = PriceCountry.query \
+                    .filter(PriceCountry.name == country_name.upper()) \
+                    .first()
+
+                country_id: int
+                if country is None:
+                    country = PriceCountry()
+                    country.name = country_name.upper()
+                    country.code = country_name.upper()
+                    db.session.add(country)
+                    db.session.commit()
+
+                country_id = country.id
+
+            except Exception as exp:
+                logging.error(f"Error in database {exp}")
+                db.session.rollback()
+                return jsonify({'message': f"Error in database {exp}"}), 500
+
+            if country_id not in country_design_prices:
+                country_design_prices[country_id] = []
+
+            for row in sheets[country_name].iterrows():
+                #Read Column B and finds out the price design category
+                try:
+                    design_category = row[1][1]
+                    price_design_category = float(row[1][2])
+                
+                    country_design_prices[country_id].append([design_category,price_design_category])
+
+                except Exception as exp:
+                    msg = f"Error reading rows: {exp}"
+                    logging.error(msg)
+                    return jsonify({"message": msg}), 421
+
+            # Get a price design by PriceCountry. If Exist get Object else,
+            # create a new object. Update or create the values category_1,...,category_5.
+
+            try:
+                qr = PriceDesign.query.filter(
+                    PriceDesign.country_id == country_id) .first()
+            except Exception as exp:
+                logging.error(f"Database error {exp}")
+                return jsonify({'message': f"Database error {exp}"}), 500
+
+            if qr is None:
+                try:
+                    qr = PriceDesign()
+                    qr.country_id = country_id
+                    db.session.add(qr)
+                    db.session.commit()
+                except Exception as exp:
+                    logging.error(f'Database error. {exp}')
+                    db.session.rollback()
+                    return jsonify({'message': f"Database error. {exp}"}), 500
+
+            for category,value in country_design_prices[country_id]:
+                if category == constants.CATEGORY_1:
+                    qr.category_1 = value
+                if category == constants.CATEGORY_2:
+                    qr.category_2 = value
+                if category == constants.CATEGORY_3:
+                    qr.category_3 = value
+                if category == constants.CATEGORY_4:
+                    qr.category_4 = value
+                if category == constants.CATEGORY_5:
+                    qr.category_5 = value
+
+            # commit database
+            try:
+                db.session.commit()
+            except Exception as exp:
+                db.session.rollback()
+                logging.error(f"Database error {exp}")
+                return jsonify({'message': f"Database error {exp}"}), 500
+            
+        # Return status
+        return jsonify({'status': 'OK'})
+    
+    except SQLAlchemyError as e:
+        return f'Database error  f{e}', 500
+    except XLRDError as exc:
+        return f'Excel file error  f{exc}', 500
+    except Exception as exp:
+        app.logger.error(f"Error: mesg ->{exp}")
+        return jsonify({'message': exp}), 500
 
 @app.route('/api/prices/upload', methods=['POST'])
 def upload_prices():
