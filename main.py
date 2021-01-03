@@ -616,7 +616,7 @@ def upload_prices():
             if have_subcat:
                 if subcategory_name not in subcategory_hash:
                     subcategory: PriceCategory = PriceCategory.query \
-                        .filter(PriceCategory.code == subcategory_name if not is_base else 'BASE') \
+                        .filter(PriceCategory.name == subcategory_name) \
                         .filter(PriceCategory.parent_category_id == category.id) \
                         .first()
 
