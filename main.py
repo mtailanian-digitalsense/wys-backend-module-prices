@@ -1,23 +1,21 @@
 import enum
 import logging
-import random
 import os
-from functools import wraps
-from http import HTTPStatus
-
 import jwt
 import json
 import pandas as pd
-import openpyxl
 import pprint
-from flask import Flask, jsonify, abort, request
 import requests
+from flask import Flask, jsonify, abort, request
+from functools import wraps
 from flask_cors import CORS
 from flask_sqlalchemy import SQLAlchemy
 from flask_swagger import swagger
 from flask_swagger_ui import get_swaggerui_blueprint
 from sqlalchemy.ext.declarative import declarative_base
+from sqlalchemy.exc import SQLAlchemyError
 from http import HTTPStatus
+from xlrd import XLRDError
 
 import constants
 
@@ -332,7 +330,7 @@ def upload_design_prices():
 
         filename: str = file.filename
 
-        filename_split: [] = filename.split('.')
+        filename_split: list = filename.split('.')
         if not (filename_split[-1] == constants.VALID_EXTENSIONS_XLSX):
             logging.warning(f'{filename_split[-1]} is not a valid extension')
             return {
@@ -468,7 +466,7 @@ def upload_prices():
 
     filename: str = file.filename
 
-    filename_split: [] = filename.split('.')
+    filename_split: list = filename.split('.')
 
     if not (filename_split[-1] == constants.VALID_EXTENSIONS_XLS or
             filename_split[-1] == constants.VALID_EXTENSIONS_XLSX):
@@ -732,8 +730,8 @@ def get_categories():
     """
     try:
         # Query all Categories en DB.
-        categories: [] = PriceCategory.query.filter(PriceCategory.parent_category_id == None).all()
-        countries: [] = PriceCountry.query.all()
+        categories: list = PriceCategory.query.filter(PriceCategory.parent_category_id == None).all()
+        countries: list = PriceCountry.query.all()
 
     except Exception as exp:
         logging.error(f"Database error {exp}")
@@ -866,7 +864,7 @@ def save_prices():
         if price_gen is None:
             price_gen = PriceGen()
             price_gen.project_id = request.json["project_id"]
-            db.session.add(country)
+            db.session.add(price_gen)
             db.session.commit()
 
         price_gen_id = price_gen.id
@@ -878,8 +876,8 @@ def save_prices():
     
     #dictionary lists
     try:
-        workspaces: [] = request.json['workspaces']
-        categories: [] = request.json['categories']
+        workspaces: list = request.json['workspaces']
+        categories: list = request.json['categories']
 
     except Exception as exp:
         logging.error(exp)
@@ -1035,8 +1033,8 @@ def get_estimated_price():
                 HTTPStatus.BAD_REQUEST
 
     try:
-        workspaces: [] = request.json['workspaces']
-        categories: [] = request.json['categories']
+        workspaces: list = request.json['workspaces']
+        categories: list = request.json['categories']
 
     except Exception as exp:
         logging.error(exp)
@@ -1072,7 +1070,7 @@ def get_estimated_price():
     space_category_prices = {}
     #for _space in workspaces:
     i=0
-    while i<len(workspaces):
+    while i < len(workspaces):
         space_name = spaces[workspaces[i]['space_id']]
         # Get PriceModule id
         price_module: PriceModule = PriceModule.query.filter(
@@ -1148,17 +1146,246 @@ def get_estimated_price():
             else:
                 final_value += (space_category_prices[-1]
                         [cat_id][cat_resp])
-                logging.warning(f"Not valid space_id: {_space['space_id']}")
 
-    # Add Base costs
-    base_value: PriceValue = PriceValue.query.filter(
-        PriceModule.name == 'BASE').first()
-    if base_value is None:
-        logging.error("Check Base Values")
-        return jsonify({'value': final_value})
-    final_value += base_value.medium
-    return jsonify({'value': final_value})
+    return jsonify({'value': final_value}), 200
 
+@app.route('/api/prices/detail', methods=['POST'])
+@token_required
+def get_estimated_price_detail():
+    """
+        Get Estimated price
+        ---
+
+        tags:
+        - "Prices"
+        produces:
+        - "application/json"
+        consumes:
+        - "application/json"
+        parameters:
+        - in: "body"
+          name: "body"
+          required:
+          - categories
+          - workspaces
+          - country
+          properties:
+            categories:
+                type: array
+                items:
+                    type: object
+                    properties:
+                        id:
+                            type: integer
+                            description: Unique id
+                        code:
+                            type: string
+                            description: Category code
+
+                        name:
+                            type: string
+                            description: Category Name
+                        type:
+                            type: string
+                            description: Type of question ('A' or 'B')
+                        resp:
+                            type: string
+                            description: Response for this category
+                            enum: [low, normal, high]
+            workspaces:
+                type: array
+                items:
+                    type: object
+                    properties:
+                        id:
+                            type: integer
+                            description: Unique id
+                        m2_gen_id:
+                            type: integer
+                            description: m2_gen_id
+                        observation:
+                            type: integer
+                            description: observation
+                        quantity:
+                            type: integer
+                            description: quantity
+                        space_id:
+                            type: integer
+                            description: space_id
+            country:
+                type: string
+            m2:
+                type: number
+                format: float
+    """
+    # Check JSON Input
+    params = {
+        'categories',
+        'workspaces',
+        'country',
+        'm2'
+    }
+
+    for param in params:
+        if param not in request.json:
+            logging.error(f'{param} not in body')
+            return jsonify({'message': f'{param} not in body'}), \
+                HTTPStatus.BAD_REQUEST
+
+    try:
+        workspaces: list = request.json['workspaces']
+        categories: list = request.json['categories']
+
+    except Exception as exp:
+        logging.error(exp)
+        return {'message': f'{exp}'}, \
+            HTTPStatus.BAD_REQUEST
+
+    spaces = {}
+  
+    # Get all spaces.
+    token = request.headers.get('Authorization', None)
+    for _space in workspaces:
+        try:
+            headers = {'Authorization': token}
+            resp = requests.get(
+                f'http://{SPACES_MODULE_HOST}:{SPACES_MODULE_PORT}{SPACES_MODULE_API}'
+                f'/{_space["space_id"]}', headers=headers)
+            space = json.loads(resp.content.decode('utf-8'))
+            spaces[space['id']] = space['name']
+
+        except Exception as exp:
+            logging.error(f"Error getting spaces {exp}")
+            return f"Error getting spaces {exp}", 500
+
+    # ---------------- Calc total price -------------------------
+    # Get Country id
+    country_name = request.json['country']
+    country: PriceCountry = PriceCountry.query.filter(
+        PriceCountry.name == country_name).first()
+    if country is None:
+        return f'{country_name} is a invalid country'
+
+    # Find prices according to space
+    space_category_prices = {}
+    #for _space in workspaces:
+    i=0
+    while i < len(workspaces):
+        space_name = spaces[workspaces[i]['space_id']]
+        # Get PriceModule id
+        price_module: PriceModule = PriceModule.query.filter(
+            PriceModule.name == space_name).first()
+        if price_module is None:
+            logging.warning(f'No space name: {space_name}')
+            workspaces.remove(workspaces[i])
+            i=i-1
+        else:
+            # Get all prices and save in a map:
+            prices = PriceValue.query.filter(PriceValue.country_id == country.id) \
+                .filter(PriceValue.module_id == price_module.id)
+            category_prices = {}
+            price: PriceValue
+
+            for price in prices:
+                category_prices[price.category_id] = {
+                    'low': price.low,
+                    'normal': price.medium,
+                    'high': price.high
+                }
+
+            space_category_prices[workspaces[i]['space_id']] = category_prices
+        i=i+1
+    
+    base_category_prices = {}
+    # Get all base prices and save in a map:
+    base_prices = PriceValue.query.filter(PriceValue.country_id == country.id) \
+        .filter(PriceValue.module_id == None)
+    base_price: PriceValue
+
+    for base_price in base_prices:
+        base_category_prices[base_price.category_id] = {
+            'low': base_price.low,
+            'normal': base_price.medium,
+            'high': base_price.high
+        }
+    space_category_prices[-1] = base_category_prices
+
+    final_value = 0
+    m2 = request.json['m2']
+    weeks = get_project_weeks(m2, token)
+    # iterate in categories and find prices
+    for category in categories:
+        cat_id = category['id']
+        cat_resp = category['resp']
+        cat_name = category['name']
+        cat_obj = PriceCategory.query.filter(PriceCategory.name == category['name']).first()
+        cat_subcategories = cat_obj.subcategories
+        category['subcategories'] = []
+        cat_value = 0
+        if cat_subcategories:
+            for subcat in cat_subcategories:
+                subcat_dict = subcat.to_dict()
+                subcat_dict['value'] = 0
+                subcat_dict['resp'] = cat_resp
+                category['subcategories'].append(subcat_dict)
+
+        if category['code'] != 'BASE':
+            for _space in workspaces:
+                space_id = _space['space_id']
+                if space_id in space_category_prices:
+                    cat_value += (space_category_prices[space_id]
+                                [cat_id][cat_resp]) * _space['quantity']
+                    final_value += cat_value
+                    category['value'] = cat_value
+                    if cat_subcategories:
+                        for subcat in category['subcategories']:
+                            subcat['value'] += (space_category_prices[space_id]
+                                [subcat['id']][cat_resp]) * _space['quantity']
+                else:
+                    logging.warning(f"Not valid space_id: {_space['space_id']}")
+        else:
+            calc_type = ''
+            div_factor = 1
+            if cat_name in constants.BASES_CALC:
+                calc_type = constants.BASES_CALC[cat_name]
+                calc_type = calc_type.split('/')
+                if len(calc_type) > 1:
+                    div_factor = float(calc_type[1])
+                calc_type = calc_type[0]
+
+            if calc_type == 'm2':
+                cat_value = (space_category_prices[-1]
+                        [cat_id][cat_resp]*(m2/div_factor))
+                final_value += cat_value
+                if cat_subcategories:
+                    for subcat in category['subcategories']:
+                        subcat['value'] += (space_category_prices[-1]
+                                        [subcat['id']][cat_resp]*(m2/div_factor))
+            elif calc_type == 'weeks':
+                cat_value = (space_category_prices[-1]
+                        [cat_id][cat_resp]*weeks)
+                final_value += cat_value
+                if cat_subcategories:
+                    for subcat in category['subcategories']:
+                        subcat['value'] += (space_category_prices[-1]
+                                        [subcat['id']][cat_resp]*weeks)
+            else:
+                cat_value = (space_category_prices[-1]
+                        [cat_id][cat_resp])
+                final_value += cat_value
+                if cat_subcategories:
+                    for subcat in category['subcategories']:
+                        subcat['value'] += (space_category_prices[-1]
+                                        [subcat['id']][cat_resp])
+
+    resp = {
+            'categories': categories,
+            'value': final_value,
+            'country': country_name,
+            'm2': m2,
+            'weeks': weeks
+        }
+    return jsonify(resp), 200   
 
 if __name__ == '__main__':
     app.run(host=APP_HOST, port=APP_PORT, debug=True)
