@@ -506,14 +506,19 @@ def upload_prices():
         subcategory_hash = {}
 
         last_category_name = None
+        last_category_is_base = None
         category_low_value = 0
         category_medium_value = 0
         category_high_value = 0
 
         for row in sheets[country_name].iterrows():
             is_base = False
+            if last_category_is_base is None:
+                is_base = False
             if row[1][constants.ROW_PRE] == 'BASE':
                 is_base = True
+                if last_category_is_base is None:
+                    last_category_is_base = True
             # Carga de costos variables
             # Read Column "MODULO" and find Module by name
             if not is_base:
@@ -565,7 +570,7 @@ def upload_prices():
                         db.session.commit()
                         last_category.values.append(value)
                         db.session.commit()
-                        if not is_base:
+                        if not last_category_is_base:
                             module.values.append(value)
                             db.session.commit()
                     except Exception as exp:
@@ -613,7 +618,7 @@ def upload_prices():
             if have_subcat:
                 if subcategory_name not in subcategory_hash:
                     subcategory: PriceCategory = PriceCategory.query \
-                        .filter(PriceCategory.code == subcategory_name) \
+                        .filter(PriceCategory.code == subcategory_name if not is_base else 'BASE') \
                         .filter(PriceCategory.parent_category_id == category.id) \
                         .first()
 
@@ -697,6 +702,7 @@ def upload_prices():
             value.high = high
             
             last_category_name = category_name
+            last_category_is_base = is_base
             # commit database
             try:
                 db.session.commit()
@@ -1351,6 +1357,7 @@ def get_estimated_price_detail():
             if calc_type == 'm2':
                 cat_value = (space_category_prices[-1]
                         [cat_id][cat_resp]*(m2/div_factor))
+                category['value'] = cat_value
                 final_value += cat_value
                 if cat_subcategories:
                     for subcat in category['subcategories']:
@@ -1359,6 +1366,7 @@ def get_estimated_price_detail():
             elif calc_type == 'weeks':
                 cat_value = (space_category_prices[-1]
                         [cat_id][cat_resp]*weeks)
+                category['value'] = cat_value
                 final_value += cat_value
                 if cat_subcategories:
                     for subcat in category['subcategories']:
@@ -1367,6 +1375,7 @@ def get_estimated_price_detail():
             else:
                 cat_value = (space_category_prices[-1]
                         [cat_id][cat_resp])
+                category['value'] = cat_value
                 final_value += cat_value
                 if cat_subcategories:
                     for subcat in category['subcategories']:
