@@ -338,7 +338,10 @@ def upload_design_prices():
 
         # Read sheets names as country name
             
-        sheets: dict = pd.read_excel(file, None, engine='openpyxl')
+        if filename_split[-1] == constants.VALID_EXTENSIONS_XLSX:
+            sheets: dict = pd.read_excel(file.read(), None, engine='openpyxl')
+        else:
+            sheets: dict = pd.read_excel(file.read(), None)
 
         logging.debug(sheets)
 
@@ -476,9 +479,9 @@ def upload_prices():
 
     # Read sheets names as country name
     if filename_split[-1] == constants.VALID_EXTENSIONS_XLSX:
-        sheets: dict = pd.read_excel(file, None, engine='openpyxl')
+        sheets: dict = pd.read_excel(file.read(), None, engine='openpyxl')
     else:
-        sheets: dict = pd.read_excel(file, None)
+        sheets: dict = pd.read_excel(file.read(), None)
 
     logging.debug(sheets)
 
