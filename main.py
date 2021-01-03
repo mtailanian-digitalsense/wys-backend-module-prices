@@ -521,12 +521,10 @@ def upload_prices():
 
         for row in sheets[country_name].iterrows():
             is_base = False
-            if last_category_is_base is None:
-                is_base = False
             if row[1][constants.ROW_PRE] == 'BASE':
                 is_base = True
-                if last_category_is_base is None:
-                    last_category_is_base = True
+            if last_category_is_base is None:
+                last_category_is_base = is_base
             # Carga de costos variables
             # Read Column "MODULO" and find Module by name
             if not is_base:
