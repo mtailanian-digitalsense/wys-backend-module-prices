@@ -610,11 +610,13 @@ def upload_prices():
                         .first()
 
             subcategory_name = row[1][constants.ROW_DETALLE]
+            subcategory_code = ''
             have_subcat = True
             if pd.isna(subcategory_name):
                 have_subcat = False
             if have_subcat:
-                if subcategory_name not in subcategory_hash:
+                subcategory_code = category_name + ' ' + subcategory_name
+                if subcategory_code not in subcategory_hash:
                     subcategory: PriceCategory = PriceCategory.query \
                         .filter(PriceCategory.name == subcategory_name) \
                         .filter(PriceCategory.parent_category_id == category.id) \
@@ -625,18 +627,18 @@ def upload_prices():
                         try:
                             subcategory = PriceCategory()
                             subcategory.name = subcategory_name
-                            subcategory.code = subcategory_name if not is_base else 'BASE'
+                            subcategory.code = subcategory_code if not is_base else 'BASE'
                             category.subcategories.append(subcategory)
                             db.session.add(subcategory)
                             db.session.commit()
-                            subcategory_hash[subcategory_name] = subcategory
+                            subcategory_hash[subcategory_code] = subcategory
 
                         except Exception as exp:
                             logging.error(f'Database error. {exp}')
                             db.session.rollback()
                             return jsonify({'message': f"Database error. {exp}"}), 500
                     else:
-                        subcategory_hash[subcategory_name] = subcategory
+                        subcategory_hash[subcategory_code] = subcategory
                 else:
                     subcategory: PriceCategory = PriceCategory.query \
                         .filter(PriceCategory.name == subcategory_name) \
@@ -658,10 +660,10 @@ def upload_prices():
             # get Object else, create a new object. Update or create the values
             # low, medium and high.
             module_id = modules_hash[module_name].id if not is_base else None
-            subcategory_id = subcategory_hash[subcategory_name].id if have_subcat else category_hash[category_name].id
+            subcategory_id = subcategory_hash[subcategory_code].id if have_subcat else category_hash[category_name].id
 
             module = modules_hash[module_name] if not is_base else None
-            subcategory = subcategory_hash[subcategory_name] if have_subcat else category_hash[category_name]
+            subcategory = subcategory_hash[subcategory_code] if have_subcat else category_hash[category_name]
 
             try:
                 if is_base:
