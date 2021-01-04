@@ -60,19 +60,10 @@ class MyTestCase(unittest.TestCase):
                 self.assertEqual(rv.status_code, HTTPStatus.OK)
                 return rv
 
-    '''def test_categories(self):
-        db.create_all()
-        db.session.commit()
+    '''def test_get_categories(self):
         with app.test_client() as client:
-            with open('Template_Planilla_Costos.xlsx', 'rb') as test_file:
-                client.environ_base['HTTP_AUTHORIZATION'] = self.build_token(self.key)
-                files = {'file': (BytesIO(test_file.read()), 'planilla_excel.xlsx')}
-
-                rv = client.post('/api/prices/upload',
-                                 data=files,
-                                 follow_redirects=True,
-                                 content_type='multipart/form-data')
-                test_file.close()
+            client.environ_base['HTTP_AUTHORIZATION'] = self.build_token(self.key)
+            rv = client.get('/api/prices/create')
             self.assertEqual(rv.status_code, HTTPStatus.OK)'''
 
     # TODO: Se debe hacer test de integracion con modulo spaces
