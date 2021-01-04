@@ -451,260 +451,109 @@ def upload_prices():
           type: file
     """
 
-    ''' Verify that archive is a Excel spreadsheet (xls or xlsx)'''
-    # Check if the post request has the file part
-    if 'file' not in request.files:
-        abort(HTTPStatus.BAD_REQUEST, "No Multipart file found")
-    file = request.files['file']
+    try:
+        ''' Verify that archive is a Excel spreadsheet (xls or xlsx)'''
+        # Check if the post request has the file part
+        if 'file' not in request.files:
+            abort(HTTPStatus.BAD_REQUEST, "No Multipart file found")
+        file = request.files['file']
 
-    if file.filename == '':
-        logging.warning('No selected File')
-        return jsonify({'message': "No selected file"}), HTTPStatus.BAD_REQUEST
+        if file.filename == '':
+            logging.warning('No selected File')
+            return jsonify({'message': "No selected file"}), HTTPStatus.BAD_REQUEST
 
-    filename: str = file.filename
+        filename: str = file.filename
 
-    filename_split: list = filename.split('.')
+        filename_split: list = filename.split('.')
+        if not (filename_split[-1] == constants.VALID_EXTENSIONS_XLSX):
+            logging.warning(f'{filename_split[-1]} is not a valid extension')
+            return {
+                'message': f'{filename_split[-1]} is not a valid extension'}, 420
 
-    if not (filename_split[-1] == constants.VALID_EXTENSIONS_XLS or
-            filename_split[-1] == constants.VALID_EXTENSIONS_XLSX):
-        logging.warning(f'{filename_split[-1]} is not a valid extension')
-        return {
-            'message': f'{filename_split[-1]} is not a valid extension'}, 420
+        # Read sheets names as country name
+            
+        if filename_split[-1] == constants.VALID_EXTENSIONS_XLSX:
+            sheets: dict = pd.read_excel(file.read(), None, engine='openpyxl')
+        else:
+            sheets: dict = pd.read_excel(file.read(), None)
 
-    # Read sheets names as country name
-    if filename_split[-1] == constants.VALID_EXTENSIONS_XLSX:
-        sheets: dict = pd.read_excel(file.read(), None, engine='openpyxl')
-    else:
-        sheets: dict = pd.read_excel(file.read(), None)
+        logging.debug(sheets)
 
-    logging.debug(sheets)
+        country_design_prices = {}
 
-    # For Each sheet
-    for country_name in sheets:
-        try:
-            # If country exist take id, else, create a new country and take the
-            # new id
-            country: PriceCountry = PriceCountry.query \
-                .filter(PriceCountry.name == country_name.upper()) \
-                .first()
-
-            country_id: int
-            if country is None:
-                country = PriceCountry()
-                country.name = country_name.upper()
-                country.code = country_name.upper()
-                db.session.add(country)
-                db.session.commit()
-
-            country_id = country.id
-
-        except Exception as exp:
-            logging.error(f"Error in database {exp}")
-            db.session.rollback()
-            return jsonify({'message': f"Error in database {exp}"}), 500
-
-        modules_hash = {}
-        category_hash = {}
-        subcategory_hash = {}
-
-        last_category_name = None
-        last_category_is_base = None
-        category_low_value = 0
-        category_medium_value = 0
-        category_high_value = 0
-
-        for row in sheets[country_name].iterrows():
-            is_base = False
-            if row[1][constants.ROW_PRE] == 'BASE':
-                is_base = True
-            if last_category_is_base is None:
-                last_category_is_base = is_base
-            # Carga de costos variables
-            # Read Column "MODULO" and find Module by name
-            if not is_base:
-                module_name = row[1][constants.ROW_MODULO]
-                if module_name not in modules_hash:
-                    logging.debug(module_name)
-                    module: PriceModule = PriceModule.query.filter(
-                        PriceModule.name == module_name).first()
-                    if module is None:
-                        try:
-                            module = PriceModule()
-                            module.name = module_name
-                            db.session.add(module)
-                            db.session.commit()
-                            modules_hash[module_name] = module
-
-                        except Exception as exp:
-                            logging.error(f"Database error. {exp}")
-                            db.session.rollback()
-                            return jsonify({'message': f"Database error. {exp}"}), 500
-                    else:
-                        modules_hash[module_name] = module
-                else:
-                    module: PriceModule = PriceModule.query.filter(
-                        PriceModule.name == module_name).first()
-
-            # Read Column "PARAMETRO" and find a "PriceCategory"
-            category_name = row[1][constants.ROW_MODULO] if is_base else row[1][constants.ROW_PARAMETRO]
-            if not last_category_name is None and last_category_name != category_name:
-                last_category = category_hash[last_category_name]
-                try:
-                    if is_base:
-                        value = PriceValue.query.filter(
-                            PriceValue.country_id == country_id) .filter(
-                            PriceValue.category_id == last_category.id) .first()
-                    else:
-                        value = PriceValue.query.filter(
-                            PriceValue.module_id == modules_hash[module_name].id) .filter(
-                            PriceValue.country_id == country_id) .filter(
-                            PriceValue.category_id == last_category.id) .first()
-                except Exception as exp:
-                    logging.error(f"Database error {exp}")
-                    return jsonify({'message': f"Database error {exp}"}), 500
-
-                if value is None:
-                    value = PriceValue()
-                    try:
-                        country.values.append(value)
-                        db.session.commit()
-                        last_category.values.append(value)
-                        db.session.commit()
-                        if not last_category_is_base:
-                            module.values.append(value)
-                            db.session.commit()
-                    except Exception as exp:
-                        logging.error(f"Database error {exp}")
-                        return jsonify({'message': f"Database error {exp}"}), 500
-                
-                value.low = category_low_value
-                value.medium = category_medium_value
-                value.high = category_high_value
-
-                category_low_value = 0
-                category_medium_value = 0
-                category_high_value = 0
-
-            if category_name not in category_hash:
-                category: PriceCategory = PriceCategory.query \
-                    .filter(PriceCategory.name == category_name) \
+        # For Each sheet
+        for country_name in sheets:
+            try:
+                # If country exist take id, else, create a new country and take the
+                # new id
+                country: PriceCountry = PriceCountry.query \
+                    .filter(PriceCountry.name == country_name.upper()) \
                     .first()
 
-                # If PriceCategory exist get id else create and get the id.
-                if category is None:
-                    try:
-                        category = PriceCategory()
-                        category.name = category_name
-                        category.code = category_name if not is_base else 'BASE'
-                        db.session.add(category)
-                        db.session.commit()
-                        category_hash[category_name] = category
+                country_id: int
+                if country is None:
+                    country = PriceCountry()
+                    country.name = country_name.upper()
+                    country.code = country_name.upper()
+                    db.session.add(country)
+                    db.session.commit()
 
-                    except Exception as exp:
-                        logging.error(f'Database error. {exp}')
-                        db.session.rollback()
-                        return jsonify({'message': f"Database error. {exp}"}), 500
-                else:
-                    category_hash[category_name] = category
-            else:
-                category: PriceCategory = PriceCategory.query \
-                        .filter(PriceCategory.name == category_name) \
-                        .first()
-
-            subcategory_name = row[1][constants.ROW_DETALLE]
-            subcategory_code = ''
-            have_subcat = True
-            if pd.isna(subcategory_name):
-                have_subcat = False
-            if have_subcat:
-                subcategory_code = category_name + ' ' + subcategory_name
-                if subcategory_code not in subcategory_hash:
-                    subcategory: PriceCategory = PriceCategory.query \
-                        .filter(PriceCategory.name == subcategory_name) \
-                        .filter(PriceCategory.parent_category_id == category.id) \
-                        .first()
-
-                    # If PriceCategory exist get id else create and get the id.
-                    if subcategory is None:
-                        try:
-                            subcategory = PriceCategory()
-                            subcategory.name = subcategory_name
-                            subcategory.code = subcategory_code if not is_base else 'BASE'
-                            category.subcategories.append(subcategory)
-                            db.session.add(subcategory)
-                            db.session.commit()
-                            subcategory_hash[subcategory_code] = subcategory
-
-                        except Exception as exp:
-                            logging.error(f'Database error. {exp}')
-                            db.session.rollback()
-                            return jsonify({'message': f"Database error. {exp}"}), 500
-                    else:
-                        subcategory_hash[subcategory_code] = subcategory
-                else:
-                    subcategory: PriceCategory = PriceCategory.query \
-                        .filter(PriceCategory.name == subcategory_name) \
-                        .filter(PriceCategory.parent_category_id == category.id) \
-                        .first()
-            # Read columns "ESTANDAR BAJO", "ESTANDAR MEDIO", "ESTANDAR ALTO".
-            try:
-                low: float = row[1][constants.ROW_BAJO] if not pd.isna(row[1][constants.ROW_BAJO]) else 0
-                medium: float = row[1][constants.ROW_MEDIO] if not pd.isna(row[1][constants.ROW_MEDIO]) else 0
-                high: float = row[1][constants.ROW_ALTO] if not pd.isna(row[1][constants.ROW_ALTO]) else 0
+                country_id = country.id
 
             except Exception as exp:
-                msg = f"Error reading rows: {constants.ROW_BAJO}, " \
-                    f"{constants.ROW_MEDIO}, {constants.ROW_ALTO}: {exp}"
-                logging.error(msg)
-                return jsonify({"message": msg}), 421
+                logging.error(f"Error in database {exp}")
+                db.session.rollback()
+                return jsonify({'message': f"Error in database {exp}"}), 500
 
-            # Get a price value by PriceCountry, PriceCategory and PriceModule. If Exist
-            # get Object else, create a new object. Update or create the values
-            # low, medium and high.
-            module_id = modules_hash[module_name].id if not is_base else None
-            subcategory_id = subcategory_hash[subcategory_code].id if have_subcat else category_hash[category_name].id
+            if country_id not in country_design_prices:
+                country_design_prices[country_id] = []
 
-            module = modules_hash[module_name] if not is_base else None
-            subcategory = subcategory_hash[subcategory_code] if have_subcat else category_hash[category_name]
+            for row in sheets[country_name].iterrows():
+                #Read Column B and finds out the price design category
+                try:
+                    design_category = row[1][1]
+                    price_design_category = float(row[1][2])
+                    
+                    country_design_prices[country_id].append([design_category,price_design_category])
+
+                except Exception as exp:
+                    msg = f"Error reading rows: {exp}"
+                    logging.error(msg)
+                    return jsonify({"message": msg}), 421
+
+            # Get a price design by PriceCountry. If Exist get Object else,
+            # create a new object. Update or create the values category_1,...,category_5.
 
             try:
-                if is_base:
-                    value = PriceValue.query.filter(
-                        PriceValue.country_id == country_id) .filter(
-                        PriceValue.category_id == subcategory_id) .first()
-                else:
-                    value = PriceValue.query.filter(
-                        PriceValue.module_id == module_id) .filter(
-                        PriceValue.country_id == country_id) .filter(
-                        PriceValue.category_id == subcategory_id) .first()
+                qr = PriceDesign.query.filter(
+                    PriceDesign.country_id == country_id) .first()
             except Exception as exp:
                 logging.error(f"Database error {exp}")
                 return jsonify({'message': f"Database error {exp}"}), 500
 
-            if value is None:
-                value = PriceValue()
+            if qr is None:
                 try:
-                    country.values.append(value)
-                    db.session.commit()
-                    subcategory.values.append(value)
-                    db.session.commit()
-                    if not is_base:
-                        module.values.append(value)
+                    qr = PriceDesign()
+                    qr.country_id = country_id
+                    db.session.add(qr)
                     db.session.commit()
                 except Exception as exp:
-                    logging.error(f"Database error {exp}")
-                    return jsonify({'message': f"Database error {exp}"}), 500
+                    logging.error(f'Database error. {exp}')
+                    db.session.rollback()
+                    return jsonify({'message': f"Database error. {exp}"}), 500
 
-            category_low_value += low
-            category_medium_value += medium
-            category_high_value += high
+            for category,value in country_design_prices[country_id]:
+                if category == constants.CATEGORY_1:
+                    qr.category_1 = value
+                if category == constants.CATEGORY_2:
+                    qr.category_2 = value
+                if category == constants.CATEGORY_3:
+                    qr.category_3 = value
+                if category == constants.CATEGORY_4:
+                    qr.category_4 = value
+                if category == constants.CATEGORY_5:
+                    qr.category_5 = value
 
-            value.low = low
-            value.medium = medium
-            value.high = high
-            
-            last_category_name = category_name
-            last_category_is_base = is_base
             # commit database
             try:
                 db.session.commit()
@@ -712,8 +561,16 @@ def upload_prices():
                 db.session.rollback()
                 logging.error(f"Database error {exp}")
                 return jsonify({'message': f"Database error {exp}"}), 500
-    # Return status
-    return jsonify({'status': 'OK'})
+                
+        # Return status
+        return jsonify({'status': 'OK'})
+    except SQLAlchemyError as e:
+        return f'Database error  f{e}', 500
+    except XLRDError as exc:
+        return f'Excel file error  f{exc}', 500
+    except Exception as exp:
+        app.logger.error(f"Error: mesg ->{exp}")
+        return jsonify({'message': exp}), 500
 
 @app.route('/api/prices/create', methods=['GET'])
 @token_required
