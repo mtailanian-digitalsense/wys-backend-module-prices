@@ -319,10 +319,10 @@ def upload_design_prices():
     """
     ''' Verify that archive is a Excel spreadsheet (xls or xlsx)'''
     # Check if the post request has the file part
-    try:
-        if 'file' not in request.files:
-            abort(HTTPStatus.BAD_REQUEST, "No Multipart file found")
-        file = request.files['file']
+
+    if 'file' not in request.files:
+        abort(HTTPStatus.BAD_REQUEST, "No Multipart file found")
+    file = request.files['file']
 
     if file.filename == '':
         logging.warning('No selected File')
@@ -428,15 +428,9 @@ def upload_design_prices():
                 logging.error(f"Database error {exp}")
                 return jsonify({'message': f"Database error {exp}"}), 500
             
-        # Return status
-        return jsonify({'status': 'OK'})
-    except SQLAlchemyError as e:
-        return f'Database error  f{e}', 500
-    except XLRDError as exc:
-        return f'Excel file error  f{exc}', 500
-    except Exception as exp:
-        app.logger.error(f"Error: mesg ->{exp}")
-        return jsonify({'message': exp}), 500
+    # Return status
+    return jsonify({'status': 'OK'})
+
 
 @app.route('/api/prices/upload', methods=['POST'])
 def upload_prices():
