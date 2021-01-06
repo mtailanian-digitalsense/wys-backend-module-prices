@@ -392,7 +392,7 @@ def upload_design_prices():
         parameters:
         - name: "file"
           in: "formData"
-          description: "File to upload (only xlsx)"
+          description: "File to upload"
           required: true
           type: file
     """
@@ -410,7 +410,8 @@ def upload_design_prices():
         filename: str = file.filename
 
         filename_split: list = filename.split('.')
-        if not (filename_split[-1] == constants.VALID_EXTENSIONS_XLSX):
+        if not (filename_split[-1] == constants.VALID_EXTENSIONS_XLS or
+            filename_split[-1] == constants.VALID_EXTENSIONS_XLSX):
             logging.warning(f'{filename_split[-1]} is not a valid extension')
             return {
                 'message': f'{filename_split[-1]} is not a valid extension'}, 420
