@@ -120,14 +120,16 @@ class PriceCategory(db.Model):
     values = db.relationship("PriceValue",
                              backref="price_category",
                              cascade="all, delete, delete-orphan")
+                                
 
     def to_dict(self, full=False):
         obj_dict = {
             'id': self.id,
             'code': self.code,
-            'name': self.name,
-            'type': self.type
+            'type': self.type,
+            'name': self.name
         }
+
         if full:
             obj_dict['parent_category_id'] = self.parent_category_id
             obj_dict['subcategories'] = [subcategory.to_dict() for subcategory in self.subcategories]
@@ -147,45 +149,24 @@ class PriceGen(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     project_id = db.Column(db.Integer, nullable=False, unique=True)
     value = db.Column(db.Float, nullable=False, default=0.0)
-    
+    relations = db.relationship("PriceGenHasPriceValue",
+                            backref=db.backref('price_gen_has_price_value', remote_side=[id]),
+                             cascade="all, delete, delete-orphan")
 
-class PriceValue(db.Model):
-    """
-    id: Id primary key
-    low: Value in USD related to a category and module
-    medium: Value in USD related to a category and module
-    high: Value in USD related to a category and module
-    """
-    id = db.Column(db.Integer, primary_key=True)
-    low = db.Column(db.Float, nullable=False, default=0.0)
-    medium = db.Column(db.Float, nullable=False, default=0.0)
-    high = db.Column(db.Float, nullable=False, default=0.0)
-    module_id = db.Column(
-        db.Integer,
-        db.ForeignKey('price_module.id'),
-        nullable=True)
-    country_id = db.Column(
-        db.Integer,
-        db.ForeignKey('price_country.id'),
-        nullable=True)
-    category_id = db.Column(
-        db.Integer,
-        db.ForeignKey('price_category.id'),
-        nullable=True)
-
-    def to_dict(self):
+    def to_dict(self,full=True):
+        """
+        Convert to dictionary
+        """
         obj_dict = {
-            'id': self.id,
-            'low': self.low,
-            'medium': self.medium,
-            'high': self.high,
-            'module_id': self.module_id,
-            'country_id': self.country_id,
-            'category_id': self.category_id
+            'project_id': self.project_id,
+            'value': self.value
         }
+        if full:
+            obj_dict['price_value_saved'] = [relation.to_dict() for relation in self.relations]
+
         return obj_dict
 
-    def serialize(self):
+    def serialize(self,full):
         return jsonify(self.to_dict())
 
 class PriceDesign(db.Model):
@@ -208,6 +189,45 @@ class PriceDesign(db.Model):
         db.ForeignKey('price_country.id'),
         nullable=False)
 
+class PriceGenHasPriceValue(db.Model):
+    """
+    id: Id primary key
+    price_gen_id: ID related to the project's value generated
+    price_value_id: ID related to the item (category, module, country) in price_value
+    price_value_option_selected: option selected: low, high, mediu
+    """
+    id = db.Column(db.Integer, primary_key=True)
+    price_gen_id = db.Column(
+        db.Integer,
+        db.ForeignKey('price_gen.id'),
+        nullable=False)
+    price_value_id = db.Column(
+        db.Integer,
+        db.ForeignKey('price_value.id'),
+        nullable=False)
+    price_value_option_selected = db.Column(db.String(45), nullable=False)
+    prices_value = db.relationship("PriceValue",
+                            backref=db.backref('price_value', remote_side=[price_value_id]),
+                             cascade="all, delete, delete-orphan",
+                             single_parent=True)
+
+    def to_dict(self,full=True):
+        """
+        Convert to dictionary
+        """
+        obj_dict = {
+            'price_value_id': self.price_value_id,
+            'price_value_option_selected': self.price_value_option_selected
+        }
+        if(full):
+            obj_dict['price_value_detail'] = [self.prices_value.to_dict()]
+
+        return obj_dict
+
+    def serialize(self):
+        return jsonify(self.to_dict())
+  
+
 class PriceCountry(db.Model):
     """
     id: Id primary key
@@ -221,13 +241,72 @@ class PriceCountry(db.Model):
                              backref="price_country",
                              cascade="all, delete, delete-orphan")
 
+    def to_dict(self,only_name=False):
+        obj_dict={}
+        if only_name == False: 
+             obj_dict['id']: self.id
+             obj_dict['default']: self.default
+        obj_dict['name'] = self.name
+        return obj_dict
+
+
+class PriceValue(db.Model):
+    """
+    id: Id primary key
+    low: 
+    medium: 
+    high:
+    module_id:
+    country_id:
+    category_id:
+    price_value_id
+    """
+    id = db.Column(db.Integer, primary_key=True)
+    low = db.Column(db.Float, nullable=False, default=0.0)
+    medium = db.Column(db.Float, nullable=False, default=0.0)
+    high = db.Column(db.Float, nullable=False, default=0.0)
+    module_id = db.Column(
+        db.Integer,
+        db.ForeignKey('price_module.id'),
+        nullable=True)
+    country_id = db.Column(
+        db.Integer,
+        db.ForeignKey('price_country.id'),
+        nullable=False)
+    category_id = db.Column(
+        db.Integer,
+        db.ForeignKey('price_category.id'),
+        nullable=False)
+    price_value_id = db.Column(
+        db.Integer,
+        db.ForeignKey('price_value.id'),
+        nullable=True)
+    values = db.relationship("PriceValue",
+                             backref="parent-node",
+                             remote_side="PriceValue.id",
+                             cascade="all, delete, delete-orphan",
+                             single_parent=True)
+    country_name = db.relationship("PriceCountry",
+                             backref="price_country",
+                             remote_side="PriceValue.country_id",
+                             cascade="all, delete, delete-orphan",
+                             single_parent=True)
+
     def to_dict(self):
-        return {
-            'id': self.id,
-            'name': self.name,
-            'default': self.default,
+        """
+        Convert to dictionary
+        """
+        obj_dict = {
+            'module_id': self.module_id,
+            'country_id': self.country_id,
+            'category_id': self.category_id,
+            'country_name': self.country_name.to_dict(only_name=True)
         }
 
+        return obj_dict
+
+    def serialize(self):
+        return jsonify(self.to_dict())
 
 db.create_all()
 db.session.commit()
@@ -313,144 +392,10 @@ def upload_design_prices():
         parameters:
         - name: "file"
           in: "formData"
-          description: "File to upload (only xlsx)"
-          required: true
-          type: file
-    """
-    ''' Verify that archive is a Excel spreadsheet (xls or xlsx)'''
-    # Check if the post request has the file part
-
-    if 'file' not in request.files:
-        abort(HTTPStatus.BAD_REQUEST, "No Multipart file found")
-    file = request.files['file']
-
-    if file.filename == '':
-        logging.warning('No selected File')
-        return jsonify({'message': "No selected file"}), HTTPStatus.BAD_REQUEST
-        
-    filename: str = file.filename
-
-    filename_split: list = filename.split('.')
-    if not (filename_split[-1] == constants.VALID_EXTENSIONS_XLSX):
-        logging.warning(f'{filename_split[-1]} is not a valid extension')
-        return {
-            'message': f'{filename_split[-1]} is not a valid extension'}, 420
-
-    # Read sheets names as country name
-            
-    if filename_split[-1] == constants.VALID_EXTENSIONS_XLSX:
-        sheets: dict = pd.read_excel(file.read(), None, engine='openpyxl')
-    else:
-        sheets: dict = pd.read_excel(file.read(), None)
-
-        logging.debug(sheets)
-
-        country_design_prices = {}
-
-        # For Each sheet
-        for country_name in sheets:
-            try:
-                # If country exist take id, else, create a new country and take the
-                # new id
-                country: PriceCountry = PriceCountry.query \
-                    .filter(PriceCountry.name == country_name.upper()) \
-                    .first()
-
-                country_id: int
-                if country is None:
-                    country = PriceCountry()
-                    country.name = country_name.upper()
-                    country.code = country_name.upper()
-                    db.session.add(country)
-                    db.session.commit()
-
-                country_id = country.id
-
-            except Exception as exp:
-                logging.error(f"Error in database {exp}")
-                db.session.rollback()
-                return jsonify({'message': f"Error in database {exp}"}), 500
-
-            if country_id not in country_design_prices:
-                country_design_prices[country_id] = []
-
-            for row in sheets[country_name].iterrows():
-                #Read Column B and finds out the price design category
-                try:
-                    design_category = row[1][1]
-                    price_design_category = float(row[1][2])
-                
-                    country_design_prices[country_id].append([design_category,price_design_category])
-
-                except Exception as exp:
-                    msg = f"Error reading rows: {exp}"
-                    logging.error(msg)
-                    return jsonify({"message": msg}), 421
-
-            # Get a price design by PriceCountry. If Exist get Object else,
-            # create a new object. Update or create the values category_1,...,category_5.
-
-            try:
-                qr = PriceDesign.query.filter(
-                    PriceDesign.country_id == country_id) .first()
-            except Exception as exp:
-                logging.error(f"Database error {exp}")
-                return jsonify({'message': f"Database error {exp}"}), 500
-
-            if qr is None:
-                try:
-                    qr = PriceDesign()
-                    qr.country_id = country_id
-                    db.session.add(qr)
-                    db.session.commit()
-                except Exception as exp:
-                    logging.error(f'Database error. {exp}')
-                    db.session.rollback()
-                    return jsonify({'message': f"Database error. {exp}"}), 500
-
-            for category,value in country_design_prices[country_id]:
-                if category == constants.CATEGORY_1:
-                    qr.category_1 = value
-                if category == constants.CATEGORY_2:
-                    qr.category_2 = value
-                if category == constants.CATEGORY_3:
-                    qr.category_3 = value
-                if category == constants.CATEGORY_4:
-                    qr.category_4 = value
-                if category == constants.CATEGORY_5:
-                    qr.category_5 = value
-
-            # commit database
-            try:
-                db.session.commit()
-            except Exception as exp:
-                db.session.rollback()
-                logging.error(f"Database error {exp}")
-                return jsonify({'message': f"Database error {exp}"}), 500
-            
-    # Return status
-    return jsonify({'status': 'OK'})
-
-
-@app.route('/api/prices/upload', methods=['POST'])
-def upload_prices():
-    """
-        Upload/Update Prices
-        ---
-        tags:
-        - "Prices"
-        produces:
-        - "application/json"
-        consumes:
-        - "multipart/form-data"
-        parameters:
-        - name: "file"
-          in: "formData"
           description: "File to upload"
           required: true
           type: file
     """
-
     try:
         ''' Verify that archive is a Excel spreadsheet (xls or xlsx)'''
         # Check if the post request has the file part
@@ -465,7 +410,8 @@ def upload_prices():
         filename: str = file.filename
 
         filename_split: list = filename.split('.')
-        if not (filename_split[-1] == constants.VALID_EXTENSIONS_XLSX):
+        if not (filename_split[-1] == constants.VALID_EXTENSIONS_XLS or
+            filename_split[-1] == constants.VALID_EXTENSIONS_XLSX):
             logging.warning(f'{filename_split[-1]} is not a valid extension')
             return {
                 'message': f'{filename_split[-1]} is not a valid extension'}, 420
@@ -564,6 +510,7 @@ def upload_prices():
                 
         # Return status
         return jsonify({'status': 'OK'})
+    
     except SQLAlchemyError as e:
         return f'Database error  f{e}', 500
     except XLRDError as exc:
@@ -571,6 +518,291 @@ def upload_prices():
     except Exception as exp:
         app.logger.error(f"Error: mesg ->{exp}")
         return jsonify({'message': exp}), 500
+
+
+@app.route('/api/prices/upload', methods=['POST'])
+def upload_prices():
+    """
+        Upload/Update Prices
+        ---
+        tags:
+        - "Prices"
+        produces:
+        - "application/json"
+        consumes:
+        - "multipart/form-data"
+        parameters:
+        - name: "file"
+          in: "formData"
+          description: "File to upload"
+          required: true
+          type: file
+    """
+
+    ''' Verify that archive is a Excel spreadsheet (xls or xlsx)'''
+    # Check if the post request has the file part
+    if 'file' not in request.files:
+        abort(HTTPStatus.BAD_REQUEST, "No Multipart file found")
+    file = request.files['file']
+
+    if file.filename == '':
+        logging.warning('No selected File')
+        return jsonify({'message': "No selected file"}), HTTPStatus.BAD_REQUEST
+
+    filename: str = file.filename
+
+    filename_split: list = filename.split('.')
+
+    if not (filename_split[-1] == constants.VALID_EXTENSIONS_XLS or
+            filename_split[-1] == constants.VALID_EXTENSIONS_XLSX):
+        logging.warning(f'{filename_split[-1]} is not a valid extension')
+        return {
+            'message': f'{filename_split[-1]} is not a valid extension'}, 420
+
+    # Read sheets names as country name
+    if filename_split[-1] == constants.VALID_EXTENSIONS_XLSX:
+        sheets: dict = pd.read_excel(file.read(), None, engine='openpyxl')
+    else:
+        sheets: dict = pd.read_excel(file.read(), None)
+
+    logging.debug(sheets)
+
+    # For Each sheet
+    for country_name in sheets:
+        try:
+            # If country exist take id, else, create a new country and take the
+            # new id
+            country: PriceCountry = PriceCountry.query \
+                .filter(PriceCountry.name == country_name.upper()) \
+                .first()
+
+            country_id: int
+            if country is None:
+                country = PriceCountry()
+                country.name = country_name.upper()
+                country.code = country_name.upper()
+                db.session.add(country)
+                db.session.commit()
+
+            country_id = country.id
+
+        except Exception as exp:
+            logging.error(f"Error in database {exp}")
+            db.session.rollback()
+            return jsonify({'message': f"Error in database {exp}"}), 500
+
+        modules_hash = {}
+        category_hash = {}
+        subcategory_hash = {}
+
+        last_category_name = None
+        last_category_is_base = None
+        category_low_value = 0
+        category_medium_value = 0
+        category_high_value = 0
+
+        for row in sheets[country_name].iterrows():
+            is_base = False
+            if row[1][constants.ROW_PRE] == 'BASE':
+                is_base = True
+            if last_category_is_base is None:
+                last_category_is_base = is_base
+            # Carga de costos variables
+            # Read Column "MODULO" and find Module by name
+            if not is_base:
+                module_name = row[1][constants.ROW_MODULO]
+                if module_name not in modules_hash:
+                    logging.debug(module_name)
+                    module: PriceModule = PriceModule.query.filter(
+                        PriceModule.name == module_name).first()
+                    if module is None:
+                        try:
+                            module = PriceModule()
+                            module.name = module_name
+                            db.session.add(module)
+                            db.session.commit()
+                            modules_hash[module_name] = module
+
+                        except Exception as exp:
+                            logging.error(f"Database error. {exp}")
+                            db.session.rollback()
+                            return jsonify({'message': f"Database error. {exp}"}), 500
+                    else:
+                        modules_hash[module_name] = module
+                else:
+                    module: PriceModule = PriceModule.query.filter(
+                        PriceModule.name == module_name).first()
+
+            # Read Column "PARAMETRO" and find a "PriceCategory"
+            category_name = row[1][constants.ROW_MODULO] if is_base else row[1][constants.ROW_PARAMETRO]
+            if not last_category_name is None and last_category_name != category_name:
+                last_category = category_hash[last_category_name]
+                try:
+                    if is_base:
+                        value = PriceValue.query.filter(
+                            PriceValue.country_id == country_id) .filter(
+                            PriceValue.category_id == last_category.id) .first()
+                    else:
+                        value = PriceValue.query.filter(
+                            PriceValue.module_id == modules_hash[module_name].id) .filter(
+                            PriceValue.country_id == country_id) .filter(
+                            PriceValue.category_id == last_category.id) .first()
+                except Exception as exp:
+                    logging.error(f"Database error {exp}")
+                    return jsonify({'message': f"Database error {exp}"}), 500
+
+                if value is None:
+                    value = PriceValue()
+                    try:
+                        country.values.append(value)
+                        db.session.commit()
+                        last_category.values.append(value)
+                        db.session.commit()
+                        if not last_category_is_base:
+                            module.values.append(value)
+                            db.session.commit()
+                    except Exception as exp:
+                        logging.error(f"Database error {exp}")
+                        return jsonify({'message': f"Database error {exp}"}), 500
+                
+                value.low = category_low_value
+                value.medium = category_medium_value
+                value.high = category_high_value
+
+                category_low_value = 0
+                category_medium_value = 0
+                category_high_value = 0
+
+            if category_name not in category_hash:
+                category: PriceCategory = PriceCategory.query \
+                    .filter(PriceCategory.name == category_name) \
+                    .first()
+
+                # If PriceCategory exist get id else create and get the id.
+                if category is None:
+                    try:
+                        category = PriceCategory()
+                        category.name = category_name
+                        category.code = category_name if not is_base else 'BASE'
+                        db.session.add(category)
+                        db.session.commit()
+                        category_hash[category_name] = category
+
+                    except Exception as exp:
+                        logging.error(f'Database error. {exp}')
+                        db.session.rollback()
+                        return jsonify({'message': f"Database error. {exp}"}), 500
+                else:
+                    category_hash[category_name] = category
+            else:
+                category: PriceCategory = PriceCategory.query \
+                        .filter(PriceCategory.name == category_name) \
+                        .first()
+
+            subcategory_name = row[1][constants.ROW_DETALLE]
+            subcategory_code = ''
+            have_subcat = True
+            if pd.isna(subcategory_name):
+                have_subcat = False
+            if have_subcat:
+                subcategory_code = category_name + ' ' + subcategory_name
+                if subcategory_code not in subcategory_hash:
+                    subcategory: PriceCategory = PriceCategory.query \
+                        .filter(PriceCategory.name == subcategory_name) \
+                        .filter(PriceCategory.parent_category_id == category.id) \
+                        .first()
+
+                    # If PriceCategory exist get id else create and get the id.
+                    if subcategory is None:
+                        try:
+                            subcategory = PriceCategory()
+                            subcategory.name = subcategory_name
+                            subcategory.code = subcategory_code if not is_base else 'BASE'
+                            category.subcategories.append(subcategory)
+                            db.session.add(subcategory)
+                            db.session.commit()
+                            subcategory_hash[subcategory_code] = subcategory
+
+                        except Exception as exp:
+                            logging.error(f'Database error. {exp}')
+                            db.session.rollback()
+                            return jsonify({'message': f"Database error. {exp}"}), 500
+                    else:
+                        subcategory_hash[subcategory_code] = subcategory
+                else:
+                    subcategory: PriceCategory = PriceCategory.query \
+                        .filter(PriceCategory.name == subcategory_name) \
+                        .filter(PriceCategory.parent_category_id == category.id) \
+                        .first()
+            # Read columns "ESTANDAR BAJO", "ESTANDAR MEDIO", "ESTANDAR ALTO".
+            try:
+                low: float = row[1][constants.ROW_BAJO] if not pd.isna(row[1][constants.ROW_BAJO]) else 0
+                medium: float = row[1][constants.ROW_MEDIO] if not pd.isna(row[1][constants.ROW_MEDIO]) else 0
+                high: float = row[1][constants.ROW_ALTO] if not pd.isna(row[1][constants.ROW_ALTO]) else 0
+
+            except Exception as exp:
+                msg = f"Error reading rows: {constants.ROW_BAJO}, " \
+                    f"{constants.ROW_MEDIO}, {constants.ROW_ALTO}: {exp}"
+                logging.error(msg)
+                return jsonify({"message": msg}), 421
+
+            # Get a price value by PriceCountry, PriceCategory and PriceModule. If Exist
+            # get Object else, create a new object. Update or create the values
+            # low, medium and high.
+            module_id = modules_hash[module_name].id if not is_base else None
+            subcategory_id = subcategory_hash[subcategory_code].id if have_subcat else category_hash[category_name].id
+
+            module = modules_hash[module_name] if not is_base else None
+            subcategory = subcategory_hash[subcategory_code] if have_subcat else category_hash[category_name]
+
+            try:
+                if is_base:
+                    value = PriceValue.query.filter(
+                        PriceValue.country_id == country_id) .filter(
+                        PriceValue.category_id == subcategory_id) .first()
+                else:
+                    value = PriceValue.query.filter(
+                        PriceValue.module_id == module_id) .filter(
+                        PriceValue.country_id == country_id) .filter(
+                        PriceValue.category_id == subcategory_id) .first()
+            except Exception as exp:
+                logging.error(f"Database error {exp}")
+                return jsonify({'message': f"Database error {exp}"}), 500
+
+            if value is None:
+                value = PriceValue()
+                try:
+                    country.values.append(value)
+                    db.session.commit()
+                    subcategory.values.append(value)
+                    db.session.commit()
+                    if not is_base:
+                        module.values.append(value)
+                    db.session.commit()
+                except Exception as exp:
+                    logging.error(f"Database error {exp}")
+                    return jsonify({'message': f"Database error {exp}"}), 500
+
+            category_low_value += low
+            category_medium_value += medium
+            category_high_value += high
+
+            value.low = low
+            value.medium = medium
+            value.high = high
+            
+            last_category_name = category_name
+            last_category_is_base = is_base
+            # commit database
+            try:
+                db.session.commit()
+            except Exception as exp:
+                db.session.rollback()
+                logging.error(f"Database error {exp}")
+                return jsonify({'message': f"Database error {exp}"}), 500
+    # Return status
+    return jsonify({'status': 'OK'})
+
 
 @app.route('/api/prices/create', methods=['GET'])
 @token_required
@@ -693,8 +925,7 @@ def save_prices():
         'value',
         'workspaces'
     }
-    pp = pprint.PrettyPrinter(indent=4)
-
+   
     for param in params:
         if param not in request.json:
             logging.error(f'{param} not in body')
@@ -712,20 +943,24 @@ def save_prices():
         logging.error(f"Error getting Project {exp}")#cambiar mensaje de exp
         return f"Error getting project {exp}", 500
     
-    #saving PriceGen
-    try:
-        # If PriceGen exist take id, else, create a new PriceGen and take the
-        # new id
-        price_gen: PriceGen = PriceGen.query \
-            .filter(PriceGen.project_id == request.json["project_id"]) \
-            .first()
 
-        price_gen_id: int
+    #saving PriceGen
+    
+    # If PriceGen exist take id, else, create a new PriceGen and take the
+    # new id
+    price_gen: PriceGen = PriceGen.query \
+        .filter(PriceGen.project_id == request.json["project_id"]) \
+        .first()
+
+    price_gen_id: int
+    try: 
         if price_gen is None:
             price_gen = PriceGen()
             price_gen.project_id = request.json["project_id"]
-            db.session.add(price_gen)
-            db.session.commit()
+        
+        price_gen.value = request.json["value"]
+        db.session.add(price_gen)
+        db.session.commit()
 
         price_gen_id = price_gen.id
 
@@ -734,6 +969,11 @@ def save_prices():
         db.session.rollback()
         return jsonify({'message': f"Error in database {exp}"}), 500
     
+    #updating project
+    project = update_project_by_id(request.json["project_id"], {'price_gen_id': price_gen_id}, token)
+    if project is None:
+        return "Cannot update the Project because doesn't exist", 404
+
     #dictionary lists
     try:
         workspaces: list = request.json['workspaces']
@@ -745,7 +985,6 @@ def save_prices():
             HTTPStatus.BAD_REQUEST
 
     spaces = {}
-
     # Get all spaces.
     for _space in workspaces:
         try:
@@ -761,6 +1000,7 @@ def save_prices():
             logging.error(f"Error getting spaces {exp}")
             return f"Error getting spaces {exp}", 500
     
+
     # Get Country id
     country_name = request.json['country']
     country: PriceCountry = PriceCountry.query.filter(
@@ -769,8 +1009,7 @@ def save_prices():
         return f'{country_name} is a invalid country'
     
      # Find prices according to space
-    #space_category_prices = {}
-    #for _space in workspaces:
+ 
     i=0
     while i<len(workspaces):
         space_name = spaces[workspaces[i]['space_id']]
@@ -778,33 +1017,85 @@ def save_prices():
         price_module: PriceModule = PriceModule.query.filter(
             PriceModule.name == space_name).first()
         if price_module is None:
-            logging.warning(f'No space name: {space_name}')
-            workspaces.remove(workspaces[i])
-            i=i-1
-        
-        else:  
-            module_id = price_module.id
-            '''
-            # Get all prices and save in a map:
-            prices = PriceValue.query.filter(PriceValue.country_id == country.id) \
-                .filter(PriceValue.module_id == price_module.id)
-            category_prices = {}
-            price: PriceValue
+            logging.warning(f'No module name: {space_name}')               
+        else:            
+            # Get specific price and save record relation:
+            for category in categories:
+                if category['code'] == 'BASE':
+                    module_id = None
+                else:
+                    module_id = price_module.id
 
-            for price in prices:
-                category_prices[price.category_id] = {
-                    'low': price.low,
-                    'normal': price.medium,
-                    'high': price.high
-                }
+                prices = PriceValue.query.filter(PriceValue.country_id == country.id) \
+                    .filter(PriceValue.module_id == module_id) \
+                        .filter(PriceValue.category_id == category['id']).first()
+                if prices is None:
+                    logging.warning(f'No price value for category: {category["name"]} and module: {price_module.name}')
+                else:
+                    pghpv = PriceGenHasPriceValue.query.filter(PriceGenHasPriceValue.price_gen_id == price_gen_id) \
+                        .filter(PriceGenHasPriceValue.price_value_id == prices.id).first()
 
-            space_category_prices[workspaces[i]['space_id']] = category_prices
-            '''
+                    try:
+                        if pghpv is None:
+                            pghpv = PriceGenHasPriceValue()
+                            pghpv.price_gen_id = price_gen_id
+                            pghpv.price_value_id = prices.id
+
+                        pghpv.price_value_option_selected = category["resp"]
+                        db.session.add(pghpv)
+                        db.session.commit()
+                    except Exception as exp:
+                        logging.error(f"Error in database {exp}")
+                        db.session.rollback()
+                        return jsonify({'message': f"Error in database {exp}"}), 500
         i=i+1
-    pp.pprint(workspaces)
  
     # Return status
     return jsonify({'status': 'OK'})
+
+
+def update_project_by_id(project_id, data, token):
+    headers = {'Authorization': token}
+    api_url = PROJECTS_URL + PROJECTS_MODULE_API + str(project_id)
+    rv = requests.put(api_url, json=data, headers=headers)
+    if rv.status_code == 200:
+        return json.loads(rv.text)
+    elif rv.status_code == 500:
+        raise Exception("Cannot connect to the projects module")
+    return None
+
+@app.route('/api/prices/load/<project_id>', methods=['GET'])
+@token_required
+def get_project_prices(project_id):
+    """
+        Get saved price info info.
+        ---
+          parameters:
+            - in: path
+              name: project_id
+              type: integer
+              description: Saved project ID
+          tags:
+            - Prices
+          responses:
+            200:
+              description: Saved Price Gen Object, and related Price Value Data Object.
+            404:
+              description: Project Not Found, it could be an error or it doesn't exists yet.
+            500:
+              description: Internal Server error or Database error
+    """
+
+    try:
+        pricegen = PriceGen.query.filter(PriceGen.project_id == project_id).first()
+        if pricegen is not None:
+            return pricegen.serialize(full=True), 200
+        else:
+            return {},404
+    except Exception as exp:
+        logging.error(f"Database Exception: {exp}")
+        return f"Database Exception: {exp}", 500
+
 
 @app.route('/api/prices', methods=['POST'])
 @token_required
