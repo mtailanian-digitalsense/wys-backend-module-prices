@@ -41,6 +41,11 @@ TIMES_MODULE_PORT = os.getenv('TIMES_MODULE_PORT', 5007)
 TIMES_MODULE_API = os.getenv('TIMES_MODULE_API', '/api/times')
 TIMES_URL = f"http://{TIMES_MODULE_HOST}:{TIMES_MODULE_PORT}"
 
+M2_MODULE_HOST = os.getenv('M2_MODULE_HOST', '127.0.0.1')
+M2_MODULE_PORT = os.getenv('M2_MODULE_PORT', 5001)
+M2_MODULE_API = os.getenv('M2_MODULE_API', '/api/m2')
+M2_URL = f"http://{M2_MODULE_HOST}:{M2_MODULE_PORT}"
+
 # Flask Configurations
 app = Flask(__name__)
 CORS(app)
@@ -143,12 +148,14 @@ class PriceGen(db.Model):
     """
     id:  Id primary key
     project_id: Project ID that you want to save this configurations
-    value: Value of de PROJECT
+    value: Value of the PROJECT
+    m2: M2 of the project
     """
 
     id = db.Column(db.Integer, primary_key=True)
     project_id = db.Column(db.Integer, nullable=False, unique=True)
     value = db.Column(db.Float, nullable=False, default=0.0)
+    m2 = db.Column(db.Float, nullable=False, default=0.0)
     relations = db.relationship("PriceGenHasPriceValue",
                             backref=db.backref('price_gen_has_price_value', remote_side=[id]),
                              cascade="all, delete, delete-orphan")
@@ -159,7 +166,8 @@ class PriceGen(db.Model):
         """
         obj_dict = {
             'project_id': self.project_id,
-            'value': self.value
+            'value': self.value,
+            'm2': self.m2
         }
         if full:
             obj_dict['price_value_saved'] = [relation.to_dict() for relation in self.relations]
@@ -850,6 +858,7 @@ def save_prices():
             - country
             - categories
             - workspaces
+            - m2
         parameters:
         - in: body
           name: body
@@ -858,6 +867,9 @@ def save_prices():
                 type: number
                 format: integer
             value:
+                type: number
+                format: float
+            m2:
                 type: number
                 format: float
             categories:
@@ -919,6 +931,7 @@ def save_prices():
         'country',
         'project_id',
         'value',
+        'm2',
         'workspaces'
     }
    
@@ -955,6 +968,7 @@ def save_prices():
             price_gen.project_id = request.json["project_id"]
         
         price_gen.value = request.json["value"]
+        price_gen.m2 = request.json["m2"]
         db.session.add(price_gen)
         db.session.commit()
 
@@ -1060,6 +1074,16 @@ def update_project_by_id(project_id, data, token):
         raise Exception("Cannot connect to the projects module")
     return None
 
+def get_workspace_by_project_id(project_id, token):
+    headers = {'Authorization': token}
+    api_url = M2_URL + M2_MODULE_API + '/' + str(project_id)
+    rv = requests.get(api_url, headers=headers)
+    if rv.status_code == 200:
+        return json.loads(rv.text)
+    elif rv.status_code == 500:
+      raise Exception("Cannot connect to the m2 module")
+    return None
+
 @app.route('/api/prices/load/<project_id>', methods=['GET'])
 @token_required
 def get_project_prices(project_id):
@@ -1081,11 +1105,47 @@ def get_project_prices(project_id):
             500:
               description: Internal Server error or Database error
     """
-
+    pp = pprint.PrettyPrinter(indent=4)
+    resp = {}
+    categories=[]
     try:
         pricegen = PriceGen.query.filter(PriceGen.project_id == project_id).first()
         if pricegen is not None:
-            return pricegen.serialize(full=True), 200
+            pg_dict = pricegen.to_dict()
+            resp['value'] = pg_dict['value']
+            resp['m2'] = pg_dict['m2']
+            for element in pg_dict['price_value_saved']:
+                detail = element['price_value_detail'][0]
+                
+                c={}
+                try:
+                    category: PriceCategory = PriceCategory.query \
+                                .filter(PriceCategory.id == detail['category_id']) \
+                                .first()
+                    
+                    c['code'] = category.code
+                    c['id'] = detail['category_id']
+                    c['name'] = category.name
+                    c['resp'] = element['price_value_option_selected']
+                    c['type'] = category.type
+                    resp['country'] = detail['country_name']['name']
+                    categories.append(c)
+                except Exception as exp:
+                    logging.error(f"Database Exception: {exp}")
+                    return f"Database Exception: {exp}", 500
+
+            # Getting workspaces
+            token = request.headers.get('Authorization', None)
+            project = get_workspace_by_project_id(pg_dict['project_id'],token)
+
+            if(project is not None):
+                resp['workspaces']=project['m2_generated_data']['workspaces']
+            else:
+                raise Exception("Project doesn't exist")
+
+            resp['categories'] = categories  
+
+            return jsonify(resp), 200  
         else:
             return {},404
     except Exception as exp:
