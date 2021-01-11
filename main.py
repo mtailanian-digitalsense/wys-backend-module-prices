@@ -538,7 +538,7 @@ def upload_prices():
           required: true
           type: file
     """
-    pp = pprint.PrettyPrinter(indent=4)
+
     ''' Verify that archive is a Excel spreadsheet (xls or xlsx)'''
     # Check if the post request has the file part
     if 'file' not in request.files:
@@ -756,9 +756,6 @@ def upload_prices():
             module = modules_hash[module_name] if not is_base else None
             subcategory = subcategory_hash[subcategory_code] if have_subcat else category_hash[category_name]
 
-            pp.pprint(module_id)
-            pp.pprint(subcategory_id)
-            pp.pprint(country_id)
             try:
                 if is_base:
                     value = PriceValue.query.filter(
@@ -772,8 +769,7 @@ def upload_prices():
             except Exception as exp:
                 logging.error(f"Database error {exp}")
                 return jsonify({'message': f"Database error {exp}"}), 500
-
-            pp.pprint(value)
+        
             if value is None:
                 value = PriceValue()
                 try:
