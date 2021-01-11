@@ -1105,7 +1105,6 @@ def get_project_prices(project_id):
             500:
               description: Internal Server error or Database error
     """
-    pp = pprint.PrettyPrinter(indent=4)
     resp = {}
     categories=[]
     try:
