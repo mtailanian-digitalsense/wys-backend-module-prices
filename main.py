@@ -267,7 +267,6 @@ class PriceValue(db.Model):
     module_id:
     country_id:
     category_id:
-    price_value_id
     """
     id = db.Column(db.Integer, primary_key=True)
     low = db.Column(db.Float, nullable=False, default=0.0)
@@ -285,15 +284,6 @@ class PriceValue(db.Model):
         db.Integer,
         db.ForeignKey('price_category.id'),
         nullable=False)
-    price_value_id = db.Column(
-        db.Integer,
-        db.ForeignKey('price_value.id'),
-        nullable=True)
-    values = db.relationship("PriceValue",
-                             backref="parent-node",
-                             remote_side="PriceValue.id",
-                             cascade="all, delete, delete-orphan",
-                             single_parent=True)
     country_name = db.relationship("PriceCountry",
                              backref="price_country",
                              remote_side="PriceValue.country_id",
@@ -1225,6 +1215,7 @@ def get_estimated_price():
 
 
     """
+    # total cost in Estimador_de_costo interface
     # Check JSON Input
     params = {
         'categories',
@@ -1277,6 +1268,7 @@ def get_estimated_price():
     space_category_prices = {}
     #for _space in workspaces:
     i=0
+
     while i < len(workspaces):
         space_name = spaces[workspaces[i]['space_id']]
         # Get PriceModule id
@@ -1302,7 +1294,7 @@ def get_estimated_price():
 
             space_category_prices[workspaces[i]['space_id']] = category_prices
         i=i+1
-    
+  
     base_category_prices = {}
     # Get all base prices and save in a map:
     base_prices = PriceValue.query.filter(PriceValue.country_id == country.id) \
@@ -1326,10 +1318,13 @@ def get_estimated_price():
         cat_resp = category['resp']
         cat_name = category['name']
         
+        print('cat_id',cat_id)
+        print('cat_resp',cat_resp)
         if category['code'] != 'BASE':
             for _space in workspaces:
                 space_id = _space['space_id']
                 if space_id in space_category_prices:
+                    print('space_id',space_id)
                     final_value += (space_category_prices[space_id]
                                 [cat_id][cat_resp]) * _space['quantity']
                 else:
@@ -1353,6 +1348,14 @@ def get_estimated_price():
             else:
                 final_value += (space_category_prices[-1]
                         [cat_id][cat_resp])
+    
+    
+    price_design: PriceDesign = PriceDesign.query.filter(
+            PriceDesign.country_id == country.id).first()
+    
+    if price_design is not None:
+        final_value += price_design.category_1 + price_design.category_2 + price_design.category_3 + price_design.category_4 + price_design.category_5
+
 
     return jsonify({'value': final_value}), 200
 
@@ -1589,8 +1592,8 @@ def get_estimated_price_detail():
                                         [subcat['id']][cat_resp])
 
     resp = {
-            'categories': categories,
-            'value': final_value,
+            'categories': categories, #colocar costo de diseño a la mala
+            'value': final_value, #agregar costo de diseño como en el ep anterior
             'country': country_name,
             'm2': m2,
             'weeks': weeks
