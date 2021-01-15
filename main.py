@@ -1146,9 +1146,12 @@ def get_project_prices(project_id):
                     for dic in categories:
                         if dic['name'] != category.name:
                             flag = True
-                        else:
+                    for dic in categories:
+                        if dic['name'] == category.name:
                             flag = False
+                   
                     if flag or len(categories) == 0:
+                        print('hola')
                         c['code'] = category.code
                         c['id'] = detail['category_id']
                         c['name'] = category.name
