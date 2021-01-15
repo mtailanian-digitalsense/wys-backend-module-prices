@@ -1142,14 +1142,20 @@ def get_project_prices(project_id):
                     category: PriceCategory = PriceCategory.query \
                                 .filter(PriceCategory.id == detail['category_id']) \
                                 .first()
-                    
-                    c['code'] = category.code
-                    c['id'] = detail['category_id']
-                    c['name'] = category.name
-                    c['resp'] = element['price_value_option_selected']
-                    c['type'] = category.type
-                    resp['country'] = detail['country_name']['name'].lower()
-                    categories.append(c)
+                    flag=False
+                    for dic in categories:
+                        if dic['name'] != category.name:
+                            flag = True
+                        else:
+                            flag = False
+                    if flag:
+                        c['code'] = category.code
+                        c['id'] = detail['category_id']
+                        c['name'] = category.name
+                        c['resp'] = element['price_value_option_selected']
+                        c['type'] = category.type
+                        resp['country'] = detail['country_name']['name'].lower()
+                        categories.append(c)
                 except Exception as exp:
                     logging.error(f"Database Exception: {exp}")
                     return f"Database Exception: {exp}", 500
@@ -1161,7 +1167,8 @@ def get_project_prices(project_id):
             if(project is not None):
                 resp['workspaces']=project['m2_generated_data']['workspaces']
             else:
-                raise Exception("Project doesn't exist")
+                logging.warning(f'No workspaces saved yet: project#{project_id}')
+                resp['workspaces'] = []
 
             resp['categories'] = categories  
 
