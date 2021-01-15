@@ -116,7 +116,7 @@ class PriceCategory(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     code = db.Column(db.String(100), nullable=False)
     name = db.Column(db.String(100), nullable=True)
-    type = db.Column(db.CHAR, nullable=False, default='A')
+    type = db.Column(db.CHAR, nullable=False)
     parent_category_id = db.Column(db.Integer, db.ForeignKey('price_category.id'))
     subcategories = db.relationship("PriceCategory",
                  backref=db.backref('price_category', remote_side=[id]),
@@ -508,7 +508,6 @@ def upload_design_prices():
                 
         # Return status
         return jsonify({'status': 'OK'})
-    
     except SQLAlchemyError as e:
         return f'Database error  f{e}', 500
     except XLRDError as exc:
@@ -516,8 +515,7 @@ def upload_design_prices():
     except Exception as exp:
         app.logger.error(f"Error: mesg ->{exp}")
         return jsonify({'message': exp}), 500
-
-
+     
 @app.route('/api/prices/upload', methods=['POST'])
 def upload_prices():
     """
@@ -565,6 +563,7 @@ def upload_prices():
 
     logging.debug(sheets)
 
+    flag=False
     # For Each sheet
     for country_name in sheets:
         try:
@@ -595,6 +594,7 @@ def upload_prices():
 
         last_category_name = None
         last_category_is_base = None
+        #same_category_cycle = False
         category_low_value = 0
         category_medium_value = 0
         category_high_value = 0
@@ -633,9 +633,24 @@ def upload_prices():
 
             # Read Column "PARAMETRO" and find a "PriceCategory"
             category_name = row[1][constants.ROW_MODULO] if is_base else row[1][constants.ROW_PARAMETRO]
+            #finding if it's type A or B
+            if len(category_name.split('(')) > 1:
+                category_type = 'B'
+            else:
+                category_type = 'A'
 
+            '''
+            if  last_category_name != category_name and same_category_cycle == True:
+                print(last_category_name,last_category.id)
+                same_category_cycle = False
+                last_category_name = None
+                category_low_value = 0
+                category_medium_value = 0
+                category_high_value = 0
+            '''
             if not last_category_name is None and last_category_name != category_name:
                 last_category = category_hash[last_category_name]
+                #print(last_category.id)
                 try:
                     if is_base:
                         value = PriceValue.query.filter(
@@ -649,7 +664,7 @@ def upload_prices():
                 except Exception as exp:
                     logging.error(f"Database error {exp}")
                     return jsonify({'message': f"Database error {exp}"}), 500
-
+            
                 if value is None:
                     value = PriceValue()
                     try:
@@ -671,18 +686,26 @@ def upload_prices():
                 category_low_value = 0
                 category_medium_value = 0
                 category_high_value = 0
-
+            '''
+            else:
+                #setting a flag, to reset last_category_name to None if the cycle with categories is done
+                if last_category_name == category_name and last_category_name is not None:
+                    same_category_cycle = True
+            '''
             if category_name not in category_hash:
                 category: PriceCategory = PriceCategory.query \
                     .filter(PriceCategory.name == category_name) \
                     .first()
-
+                
                 # If PriceCategory exist get id else create and get the id.
                 if category is None:
                     try:
                         category = PriceCategory()
                         category.name = category_name
                         category.code = category_name if not is_base else 'BASE'
+
+                        category.type = category_type
+
                         db.session.add(category)
                         db.session.commit()
                         category_hash[category_name] = category
@@ -704,6 +727,8 @@ def upload_prices():
             if pd.isna(subcategory_name):
                 have_subcat = False
             if have_subcat:
+                if flag:
+                    print('have_subcat')
                 subcategory_code = category_name + ' ' + subcategory_name
                 if subcategory_code not in subcategory_hash:
                     subcategory: PriceCategory = PriceCategory.query \
@@ -717,6 +742,7 @@ def upload_prices():
                             subcategory = PriceCategory()
                             subcategory.name = subcategory_name
                             subcategory.code = subcategory_code if not is_base else 'BASE'
+                            subcategory.type = category_type
                             category.subcategories.append(subcategory)
                             db.session.add(subcategory)
                             db.session.commit()
@@ -753,7 +779,7 @@ def upload_prices():
 
             module = modules_hash[module_name] if not is_base else None
             subcategory = subcategory_hash[subcategory_code] if have_subcat else category_hash[category_name]
-
+            
             try:
                 if is_base:
                     value = PriceValue.query.filter(
@@ -767,7 +793,7 @@ def upload_prices():
             except Exception as exp:
                 logging.error(f"Database error {exp}")
                 return jsonify({'message': f"Database error {exp}"}), 500
-        
+
             if value is None:
                 value = PriceValue()
                 try:
@@ -801,7 +827,6 @@ def upload_prices():
                 return jsonify({'message': f"Database error {exp}"}), 500
     # Return status
     return jsonify({'status': 'OK'})
-
 
 @app.route('/api/prices/create', methods=['GET'])
 @token_required
@@ -1102,6 +1127,7 @@ def get_project_prices(project_id):
     """
     resp = {}
     categories=[]
+
     try:
         pricegen = PriceGen.query.filter(PriceGen.project_id == project_id).first()
         if pricegen is not None:
@@ -1122,7 +1148,7 @@ def get_project_prices(project_id):
                     c['name'] = category.name
                     c['resp'] = element['price_value_option_selected']
                     c['type'] = category.type
-                    resp['country'] = detail['country_name']['name']
+                    resp['country'] = detail['country_name']['name'].lower()
                     categories.append(c)
                 except Exception as exp:
                     logging.error(f"Database Exception: {exp}")
@@ -1139,7 +1165,10 @@ def get_project_prices(project_id):
 
             resp['categories'] = categories  
 
-            return jsonify(resp), 200  
+            if(len(categories) > 0):
+                return jsonify(resp), 200  
+            else:
+                return {}, 404
         else:
             return {},404
     except Exception as exp:
@@ -1186,6 +1215,7 @@ def get_estimated_price():
                         type:
                             type: string
                             description: Type of question ('A' or 'B')
+                            enum: [A,B]
                         resp:
                             type: string
                             description: Response for this category
@@ -1322,13 +1352,10 @@ def get_estimated_price():
         cat_resp = category['resp']
         cat_name = category['name']
         
-        print('cat_id',cat_id)
-        print('cat_resp',cat_resp)
         if category['code'] != 'BASE':
             for _space in workspaces:
                 space_id = _space['space_id']
                 if space_id in space_category_prices:
-                    print('space_id',space_id)
                     final_value += (space_category_prices[space_id]
                                 [cat_id][cat_resp]) * _space['quantity']
                 else:
@@ -1358,8 +1385,16 @@ def get_estimated_price():
             PriceDesign.country_id == country.id).first()
     
     if price_design is not None:
-        final_value += price_design.category_1 + price_design.category_2 + price_design.category_3 + price_design.category_4 + price_design.category_5
-
+        if m2 < 100:
+            final_value += price_design.category_1
+        elif 100 <= m2 < 500:
+            final_value += price_design.category_2
+        elif 500 <= m2 < 1000:
+            final_value += price_design.category_3
+        elif 1000 <= m2 < 2500:
+            final_value += price_design.category_4
+        else:
+            final_value += price_design.category_5
 
     return jsonify({'value': final_value}), 200
 
@@ -1527,6 +1562,7 @@ def get_estimated_price_detail():
     final_value = 0
     m2 = request.json['m2']
     weeks = get_project_weeks(m2, token)
+
     # iterate in categories and find prices
     for category in categories:
         cat_id = category['id']
@@ -1541,7 +1577,8 @@ def get_estimated_price_detail():
                 subcat_dict = subcat.to_dict()
                 subcat_dict['value'] = 0
                 subcat_dict['resp'] = cat_resp
-                category['subcategories'].append(subcat_dict)
+                if(category['code'] == 'BASE'):
+                    category['subcategories'].append(subcat_dict)
 
         if category['code'] != 'BASE':
             for _space in workspaces:
@@ -1594,10 +1631,45 @@ def get_estimated_price_detail():
                     for subcat in category['subcategories']:
                         subcat['value'] += (space_category_prices[-1]
                                         [subcat['id']][cat_resp])
+    
+    #do a filter if de value in category is zero
+    cat_tmp = []
+    for category in categories:
+        if category['value'] > 0:
+            cat_tmp.append(category)
+    
+    categories = cat_tmp
+
+    #getting prices design
+    design = {}
+    design['name'] = 'COSTOS DISENO'
+
+    pd = PriceDesign.query.filter(
+                    PriceDesign.country_id == country.id) .first()
+    
+    design['value'] = 0
+    design['id'] = None
+
+    if pd is not None:
+        design['id'] = pd.id
+
+        if m2 < 100:
+            design['value'] = pd.category_1
+        elif 100 <= m2 < 500:
+            design['value'] = pd.category_2
+        elif 500 <= m2 < 1000:
+            design['value'] = pd.category_3
+        elif 1000 <= m2 < 2500:
+            design['value'] = pd.category_4
+        else:
+            design['value'] = pd.category_5
+
+        final_value += design['value']
 
     resp = {
-            'categories': categories, #colocar costo de diseño a la mala
-            'value': final_value, #agregar costo de diseño como en el ep anterior
+            'categories': categories, 
+            'design': design,
+            'value': final_value, 
             'country': country_name,
             'm2': m2,
             'weeks': weeks
@@ -1606,3 +1678,4 @@ def get_estimated_price_detail():
 
 if __name__ == '__main__':
     app.run(host=APP_HOST, port=APP_PORT, debug=True)
+
