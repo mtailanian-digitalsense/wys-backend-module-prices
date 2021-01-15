@@ -1573,7 +1573,7 @@ def get_estimated_price_detail():
     m2 = request.json['m2']
     weeks = get_project_weeks(m2, token)
     
-    pp.pprint(space_category_prices)
+    print(space_category_prices)
     # iterate in categories and find prices
     for category in categories:
         cat_id = category['id']
