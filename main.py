@@ -1568,11 +1568,12 @@ def get_estimated_price_detail():
             'high': base_price.high
         }
     space_category_prices[-1] = base_category_prices
-
+    pp = pprint.PrettyPrinter(indent=4)
     final_value = 0
     m2 = request.json['m2']
     weeks = get_project_weeks(m2, token)
-
+    
+    pp.pprint(space_category_prices)
     # iterate in categories and find prices
     for category in categories:
         cat_id = category['id']
@@ -1589,10 +1590,14 @@ def get_estimated_price_detail():
                 subcat_dict['resp'] = cat_resp
                 if(category['code'] == 'BASE'):
                     category['subcategories'].append(subcat_dict)
-
+            
+        print(cat_resp)
+        print(cat_id)
         if category['code'] != 'BASE':
             for _space in workspaces:
                 space_id = _space['space_id']
+                print(space_id)
+                print(_space['quantity'])
                 if space_id in space_category_prices:
                     cat_value += (space_category_prices[space_id]
                                 [cat_id][cat_resp]) * _space['quantity']
@@ -1652,7 +1657,7 @@ def get_estimated_price_detail():
 
     #getting prices design
     design = {}
-    design['name'] = 'COSTOS DISENO'
+    design['name'] = 'COSTOS DE DISENO'
 
     pd = PriceDesign.query.filter(
                     PriceDesign.country_id == country.id) .first()
@@ -1676,6 +1681,7 @@ def get_estimated_price_detail():
 
         final_value += design['value']
 
+    print(categories)
     resp = {
             'categories': categories, 
             'design': design,
