@@ -1127,7 +1127,7 @@ def get_project_prices(project_id):
     """
     resp = {}
     categories=[]
-
+    print(project_id)
     try:
         pricegen = PriceGen.query.filter(PriceGen.project_id == project_id).first()
         if pricegen is not None:
@@ -1151,7 +1151,6 @@ def get_project_prices(project_id):
                             flag = False
                    
                     if flag or len(categories) == 0:
-                        print('hola')
                         c['code'] = category.code
                         c['id'] = detail['category_id']
                         c['name'] = category.name
@@ -1573,7 +1572,7 @@ def get_estimated_price_detail():
     m2 = request.json['m2']
     weeks = get_project_weeks(m2, token)
     
-    print(space_category_prices)
+    #print(space_category_prices)
     # iterate in categories and find prices
     for category in categories:
         cat_id = category['id']
