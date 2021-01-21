@@ -1383,6 +1383,9 @@ def get_estimated_price():
                 if space_id in space_category_prices:
                     types1 = [type(k) for k in space_category_prices.keys()]
                     print(types1)
+                    pp.pprint(space_category_prices[space_id])
+                    pp.pprint(space_category_prices[space_id][cat_id])
+                    pp.pprint(space_category_prices[space_id][cat_id][cat_resp])
                     if(space_id != 26):
                         print(space_category_prices[space_id][cat_id][cat_resp])
                         print('|||||||||||||')
