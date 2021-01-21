@@ -1384,6 +1384,7 @@ def get_estimated_price():
                                 [cat_id][cat_resp]) * _space['quantity']
                 else:
                     logging.warning(f"Not valid space_id: {_space['space_id']}")
+                    print('Not valid space_id',space_id)
         else:
             calc_type = ''
             div_factor = 1
