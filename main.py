@@ -1380,6 +1380,8 @@ def get_estimated_price():
                 print('space_id',space_id)
                 print('====')
                 if space_id in space_category_prices:
+                    types1 = [type(k) for k in space_category_prices.keys()]
+                    print(types1)
                     if(space_id != 26 and cat_id != 171):
                         print('space_category_prices['+str(space_id)+']['+str(cat_id)+']['+str(cat_resp)+']')
                         print(space_category_prices[space_id][cat_id][cat_resp])
