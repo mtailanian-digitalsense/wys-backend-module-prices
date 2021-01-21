@@ -1379,12 +1379,12 @@ def get_estimated_price():
                 print('space_id',space_id)
                 print('====')
                 if space_id in space_category_prices:
-                    
-                    print('space_category_prices['+str(space_id)+']['+str(cat_id)+']['+str(cat_resp)+']')
-                    print(space_category_prices[space_id][cat_id][cat_resp])
-                    print('|||||||||||||')
-                    final_value += (space_category_prices[space_id]
-                                [cat_id][cat_resp]) * _space['quantity']
+                    if(space_id != 26 and cat_id != 171):
+                        print('space_category_prices['+str(space_id)+']['+str(cat_id)+']['+str(cat_resp)+']')
+                        print(space_category_prices[space_id][cat_id][cat_resp])
+                        print('|||||||||||||')
+                        final_value += (space_category_prices[space_id]
+                                    [cat_id][cat_resp]) * _space['quantity']
                 else:
                     logging.warning(f"Not valid space_id: {_space['space_id']}")
                     print('Not valid space_id',space_id)
