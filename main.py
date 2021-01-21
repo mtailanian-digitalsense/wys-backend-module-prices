@@ -1266,7 +1266,7 @@ def get_estimated_price():
         'country',
         'm2'
     }
-
+    pp = pprint.PrettyPrinter(indent=4)
     for param in params:
         if param not in request.json:
             logging.error(f'{param} not in body')
@@ -1355,15 +1355,20 @@ def get_estimated_price():
     final_value = 0
     m2 = request.json['m2']
     weeks = get_project_weeks(m2, token)
+    pp.pprint(space_category_prices)
+    pp.pprint(workspaces)
     # iterate in categories and find prices
     for category in categories:
         cat_id = category['id']
         cat_resp = category['resp']
         cat_name = category['name']
         
+        print('cat_resp',cat_resp)
+        print('cat_name',cat_name)
         if category['code'] != 'BASE':
             for _space in workspaces:
                 space_id = _space['space_id']
+                print('space_id',space_id)
                 if space_id in space_category_prices:
                     final_value += (space_category_prices[space_id]
                                 [cat_id][cat_resp]) * _space['quantity']
