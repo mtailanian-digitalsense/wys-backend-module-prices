@@ -1339,7 +1339,7 @@ def get_estimated_price():
             if(workspaces[i]['space_id'] == 31):
                 pp.pprint(workspaces[i])
                 pp.pprint(category_prices)
-                pp.print(space_category_prices)
+                pp.pprint(space_category_prices)
 
         i=i+1
   
