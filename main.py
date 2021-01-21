@@ -1371,7 +1371,7 @@ def get_estimated_price():
                 space_id = _space['space_id']
                 print('space_id',space_id)
                 if space_id in space_category_prices:
-                    print('space_category_prices['+space_id+']['+cat_id+']['+cat_resp+']')
+                    print('space_category_prices['+str(space_id)+']['+str(cat_id)+']['+str(cat_resp)+']')
                     final_value += (space_category_prices[space_id]
                                 [cat_id][cat_resp]) * _space['quantity']
                 else:
