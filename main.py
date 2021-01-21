@@ -1369,6 +1369,8 @@ def get_estimated_price():
         
         if category['code'] != 'BASE':
             for _space in workspaces:
+                pp.pprint(_space)
+                print('........')
                 space_id = _space['space_id']
 
                 print('cat_id',cat_id)
@@ -1380,6 +1382,7 @@ def get_estimated_price():
                     
                     print('space_category_prices['+str(space_id)+']['+str(cat_id)+']['+str(cat_resp)+']')
                     print(space_category_prices[space_id][cat_id][cat_resp])
+                    print('|||||||||||||')
                     final_value += (space_category_prices[space_id]
                                 [cat_id][cat_resp]) * _space['quantity']
                 else:
