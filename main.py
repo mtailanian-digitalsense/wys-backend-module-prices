@@ -1334,8 +1334,13 @@ def get_estimated_price():
                     'normal': price.medium,
                     'high': price.high
                 }
-
+    
             space_category_prices[workspaces[i]['space_id']] = category_prices
+            if(workspaces[i]['space_id'] == 31):
+                pp.pprint(workspaces[i])
+                pp.pprint(category_prices)
+                pp.print(space_category_prices)
+
         i=i+1
   
     base_category_prices = {}
@@ -1355,23 +1360,25 @@ def get_estimated_price():
     final_value = 0
     m2 = request.json['m2']
     weeks = get_project_weeks(m2, token)
-    pp.pprint(space_category_prices)
-    pp.pprint(workspaces)
+   
     # iterate in categories and find prices
     for category in categories:
         cat_id = category['id']
         cat_resp = category['resp']
         cat_name = category['name']
         
-        print('cat_id',cat_id)
-        print('cat_resp',cat_resp)
-        print('cat_name',cat_name)
         if category['code'] != 'BASE':
             for _space in workspaces:
                 space_id = _space['space_id']
-                print('space_id',space_id)
+                if(space_id == 31):
+                    print('cat_id',cat_id)
+                    print('cat_resp',cat_resp)
+                    print('cat_name',cat_name)
+                    print('space_id',space_id)
                 if space_id in space_category_prices:
-                    print('space_category_prices['+str(space_id)+']['+str(cat_id)+']['+str(cat_resp)+']')
+                    if(space_id == 31):
+                        print('space_category_prices['+str(space_id)+']['+str(cat_id)+']['+str(cat_resp)+']')
+                    print(space_category_prices[space_id][cat_id][cat_resp])
                     final_value += (space_category_prices[space_id]
                                 [cat_id][cat_resp]) * _space['quantity']
                 else:
