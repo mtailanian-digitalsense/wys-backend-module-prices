@@ -1363,6 +1363,7 @@ def get_estimated_price():
         cat_resp = category['resp']
         cat_name = category['name']
         
+        print('cat_id',cat_id)
         print('cat_resp',cat_resp)
         print('cat_name',cat_name)
         if category['code'] != 'BASE':
@@ -1370,6 +1371,7 @@ def get_estimated_price():
                 space_id = _space['space_id']
                 print('space_id',space_id)
                 if space_id in space_category_prices:
+                    print('space_category_prices['+space_id+']['+cat_id+']['+cat_resp+']')
                     final_value += (space_category_prices[space_id]
                                 [cat_id][cat_resp]) * _space['quantity']
                 else:
