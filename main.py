@@ -1370,11 +1370,12 @@ def get_estimated_price():
         if category['code'] != 'BASE':
             for _space in workspaces:
                 space_id = _space['space_id']
-                if(space_id == 31):
-                    print('cat_id',cat_id)
-                    print('cat_resp',cat_resp)
-                    print('cat_name',cat_name)
-                    print('space_id',space_id)
+
+                print('cat_id',cat_id)
+                print('cat_resp',cat_resp)
+                print('cat_name',cat_name)
+                print('space_id',space_id)
+                print('====')
                 if space_id in space_category_prices:
                     
                     print('space_category_prices['+str(space_id)+']['+str(cat_id)+']['+str(cat_resp)+']')
