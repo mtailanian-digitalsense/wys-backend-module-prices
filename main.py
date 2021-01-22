@@ -1360,7 +1360,8 @@ def get_estimated_price():
     final_value = 0
     m2 = request.json['m2']
     weeks = get_project_weeks(m2, token)
-   
+    pp.pprint(space_category_prices[26][171]['low'])
+    pp.pprint(space_category_prices[1][173]['low'])
     # iterate in categories and find prices
     for category in categories:
         cat_id = category['id']
@@ -1383,18 +1384,15 @@ def get_estimated_price():
                 if space_id in space_category_prices:
                     types1 = [type(k) for k in space_category_prices.keys()]
                     print(types1)
-                    if(space_id == 1):
-                        pp.pprint(space_category_prices)
                     pp.pprint(space_category_prices[space_id])
                     pp.pprint(space_category_prices[space_id][cat_id])
                     pp.pprint(space_category_prices[space_id][cat_id][cat_resp])
-                    if(space_id != 26):
-                        print(space_category_prices[space_id][cat_id][cat_resp])
-                        print('|||||||||||||')
-                        final_value += (space_category_prices[space_id]
-                                    [cat_id][cat_resp]) * _space['quantity']
-                    else:
-                        print("***me lo salto")
+                    
+                    print(space_category_prices[space_id][cat_id][cat_resp])
+                    print('|||||||||||||')
+                    final_value += (space_category_prices[space_id]
+                                [cat_id][cat_resp]) * _space['quantity']
+
                 else:
                     logging.warning(f"Not valid space_id: {_space['space_id']}")
                     print('Not valid space_id',space_id)
