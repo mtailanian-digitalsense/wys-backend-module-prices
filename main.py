@@ -859,6 +859,16 @@ def get_categories():
         'countries': [country.to_dict() for country in countries]
     })
 
+def get_workspace_by_project_id(project_id, token):
+    headers = {'Authorization': token}
+    api_url = M2_URL + M2_MODULE_API + '/' + str(project_id)
+    rv = requests.get(api_url, headers=headers)
+    if rv.status_code == 200:
+        return json.loads(rv.text)
+    elif rv.status_code == 500:
+      raise Exception("Cannot connect to the m2 module")
+    return None
+
 
 @app.route('/api/prices/save', methods=['POST'])
 @token_required
@@ -972,7 +982,6 @@ def save_prices():
         logging.error(f"Error getting Project {exp}")#cambiar mensaje de exp
         return f"Error getting project {exp}", 500
     
-
     #saving PriceGen
     
     # If PriceGen exist take id, else, create a new PriceGen and take the
@@ -988,7 +997,20 @@ def save_prices():
             price_gen.project_id = request.json["project_id"]
         
         price_gen.value = request.json["value"]
-        price_gen.m2 = request.json["m2"]
+        if project['m2_gen_id'] is None:
+            price_gen.m2 = request.json["m2"]
+        else:
+            token = request.headers.get('Authorization', None)
+            print('hola')
+            m2_generated = get_workspace_by_project_id(request.json["project_id"],token)
+            print('chao')
+            if m2_generated is None:
+                logging.warning(f'No data founded in m2 generated: project#{request.json["project_id"]}')
+                price_gen.m2 = request.json["m2"]
+            else:
+                price_gen.m2= m2_generated['m2_generated_data']['area']
+
+
         db.session.add(price_gen)
         db.session.commit()
 
@@ -1094,16 +1116,6 @@ def update_project_by_id(project_id, data, token):
         raise Exception("Cannot connect to the projects module")
     return None
 
-def get_workspace_by_project_id(project_id, token):
-    headers = {'Authorization': token}
-    api_url = M2_URL + M2_MODULE_API + '/' + str(project_id)
-    rv = requests.get(api_url, headers=headers)
-    if rv.status_code == 200:
-        return json.loads(rv.text)
-    elif rv.status_code == 500:
-      raise Exception("Cannot connect to the m2 module")
-    return None
-
 @app.route('/api/prices/load/<project_id>', methods=['GET'])
 @token_required
 def get_project_prices(project_id):
@@ -1127,7 +1139,7 @@ def get_project_prices(project_id):
     """
     resp = {}
     categories=[]
-    print(project_id)
+
     try:
         pricegen = PriceGen.query.filter(PriceGen.project_id == project_id).first()
         if pricegen is not None:
@@ -1266,7 +1278,7 @@ def get_estimated_price():
         'country',
         'm2'
     }
-    pp = pprint.PrettyPrinter(indent=4)
+ 
     for param in params:
         if param not in request.json:
             logging.error(f'{param} not in body')
@@ -1575,12 +1587,11 @@ def get_estimated_price_detail():
             'high': base_price.high
         }
     space_category_prices[-1] = base_category_prices
-    pp = pprint.PrettyPrinter(indent=4)
+
     final_value = 0
     m2 = request.json['m2']
     weeks = get_project_weeks(m2, token)
     
-    #print(space_category_prices)
     # iterate in categories and find prices
     for category in categories:
         cat_id = category['id']
