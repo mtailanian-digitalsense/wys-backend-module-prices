@@ -362,6 +362,16 @@ def get_project_weeks(m2, token):
         logging.error(f"Error getting spaces {exp}")
         return f"Error getting spaces {exp}", 500
 
+def get_workspace_by_project_id(project_id, token):
+    headers = {'Authorization': token}
+    api_url = M2_URL + M2_MODULE_API + '/' + str(project_id)
+    rv = requests.get(api_url, headers=headers)
+    if rv.status_code == 200:
+        return json.loads(rv.text)
+    elif rv.status_code == 500:
+      raise Exception("Cannot connect to the m2 module")
+    return None
+
 @app.route("/api/prices/spec", methods=['GET'])
 @token_required
 def spec():
@@ -374,6 +384,72 @@ def spec():
     }]
     return jsonify(swag)
 
+@app.route('/api/prices/exists/<project_id>', methods=['GET'])
+@token_required
+def exists_record_price_gen(project_id):
+    """
+        Get if exists saved record in prices module
+        ---
+          parameters:
+            - in: path
+              name: project_id
+              type: integer
+              description: Saved project ID
+          tags:
+            - Prices_validation_requests
+          responses:
+            200:
+              description: Answer yes or no, if it exists
+            500:
+              description: Internal Server error or Database error
+    """
+    resp = 'No'
+
+    try:
+        pricegen = PriceGen.query.filter(PriceGen.project_id == project_id).first()
+        if pricegen is not None:
+             resp='Yes'
+        else:
+            resp='No'
+    except Exception as exp:
+        logging.error(f"Database Exception: {exp}")
+        return f"Database Exception: {exp}", 500
+
+    return jsonify({'status': resp})
+
+@app.route('/api/prices/workspaces/<project_id>', methods=['GET'])
+@token_required
+def exists_record_workspaces(project_id):
+    """
+        Get if exists saved record in m2 module
+        ---
+          parameters:
+            - in: path
+              name: project_id
+              type: integer
+              description: Saved project ID
+          tags:
+            - Prices_validation_requests
+          responses:
+            200:
+              description: Answer yes or no, if it exists
+            500:
+              description: Internal Server error or Database error
+    """
+    resp = 'No'
+
+    try:
+        token = request.headers.get('Authorization', None)
+        project_info = get_workspace_by_project_id(project_id,token)
+        if project_info is not None:
+            resp='Yes'
+        else:
+            resp='No'
+    except Exception as exp:
+        logging.error(f"Database Exception: {exp}")
+        return f"Database Exception: {exp}", 500
+
+    return jsonify({'status': resp})
 
 @app.route('/api/prices/design/upload', methods=['POST'])
 @token_required
@@ -859,17 +935,6 @@ def get_categories():
         'countries': [country.to_dict() for country in countries]
     })
 
-def get_workspace_by_project_id(project_id, token):
-    headers = {'Authorization': token}
-    api_url = M2_URL + M2_MODULE_API + '/' + str(project_id)
-    rv = requests.get(api_url, headers=headers)
-    if rv.status_code == 200:
-        return json.loads(rv.text)
-    elif rv.status_code == 500:
-      raise Exception("Cannot connect to the m2 module")
-    return None
-
-
 @app.route('/api/prices/save', methods=['POST'])
 @token_required
 def save_prices():
@@ -1001,9 +1066,8 @@ def save_prices():
             price_gen.m2 = request.json["m2"]
         else:
             token = request.headers.get('Authorization', None)
-            print('hola')
             m2_generated = get_workspace_by_project_id(request.json["project_id"],token)
-            print('chao')
+
             if m2_generated is None:
                 logging.warning(f'No data founded in m2 generated: project#{request.json["project_id"]}')
                 price_gen.m2 = request.json["m2"]
@@ -1189,12 +1253,71 @@ def get_project_prices(project_id):
             if(len(categories) > 0):
                 return jsonify(resp), 200  
             else:
-                return {}, 404
+                return {}, 200
         else:
             return {},404
     except Exception as exp:
         logging.error(f"Database Exception: {exp}")
         return f"Database Exception: {exp}", 500
+
+@app.route('/api/prices/design/<country_id>/m2/<m2>', methods=['GET'])
+@token_required
+def get_design_cost(country_id,m2):
+    """
+        Get a country's design cost
+        ---
+          parameters:
+            - in: path
+              name: country_id
+              type: integer
+              required: true
+              description: country id
+            - in: path
+              name: m2
+              type: number
+              format: float
+              required: true
+              description: project's m2
+          tags:
+            - Prices
+          responses:
+            200:
+              description: Dictionary with details of the price design cost
+            404:
+              description: No design cost loaded for this country
+            500:
+              description: Internal Server error or Database error
+    """
+    design = {}
+    design['name'] = 'COSTOS DE DISENO'
+    try:
+        pd = PriceDesign.query.filter(
+                    PriceDesign.country_id == country_id) .first()
+    
+    except Exception as exp:
+        logging.error(f"Database Exception: {exp}")
+        return f"Database Exception: {exp}", 500
+
+    design['value'] = 0
+    design['id'] = None
+    m2=float(m2)
+
+    if pd is not None:
+        design['id'] = pd.id
+
+        if m2 < 100:
+            design['value'] = pd.category_1
+        elif 100 <= m2 < 500:
+            design['value'] = pd.category_2
+        elif 500 <= m2 < 1000:
+            design['value'] = pd.category_3
+        elif 1000 <= m2 < 2500:
+            design['value'] = pd.category_4
+        else:
+            design['value'] = pd.category_5
+    else:
+        return {}, 404
+    return jsonify(design), 200   
 
 
 @app.route('/api/prices', methods=['POST'])
@@ -1426,6 +1549,7 @@ def get_estimated_price():
             final_value += price_design.category_5
 
     return jsonify({'value': final_value}), 200
+
 
 @app.route('/api/prices/detail', methods=['POST'])
 @token_required
