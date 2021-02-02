@@ -450,6 +450,48 @@ def exists_record_workspaces(project_id):
         return f"Database Exception: {exp}", 500
 
     return jsonify({'status': resp})
+@app.route('/api/prices/update/<project_id>', methods=['PUT'])
+@token_required
+def update_prices_project_by_id(project_id):
+    """
+        Update Prices Project By ID
+        ---
+          consumes:
+            - "application/json"
+          tags:
+            - "Prices"
+          parameters:
+            - in: path
+              name: project_id
+              type: integer
+              description: Project ID
+            - in: "body"
+              name: "body"
+              required:
+                - m2
+              properties:
+                m2:
+                  type: number
+                  format: float
+          responses:
+            200:
+              description: Prices Project Object or deleted message
+            500:
+              description: "Database error"
+    """
+
+    try:
+        pricegen = PriceGen.query.filter_by(project_id=project_id).first()
+        if pricegen is None:
+            return '{}', 404
+        pricegen.m2 = request.json['m2'] if 'm2' in request.json else pricegen.m2
+        db.session.commit()
+
+        return jsonify({'status': 'ok'}), 200
+    except Exception as exp:
+        app.logger.error(f"Error in database: mesg ->{exp}")
+        return exp, 500
+
 
 @app.route('/api/prices/design/upload', methods=['POST'])
 @token_required
