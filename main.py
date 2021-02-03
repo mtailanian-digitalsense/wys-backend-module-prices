@@ -384,6 +384,42 @@ def spec():
     }]
     return jsonify(swag)
 
+@app.route('/api/prices/data/<price_gen_id>', methods = ['GET'])
+@token_required
+def get_price_by_price_gen_id(price_gen_id):
+    """
+        Get Price of prices module by price gen ID from Projects module.
+        ---
+        parameters:
+          - in: path
+            name: price_gen_id
+            type: integer
+            description: Price gen ID
+        tags:
+        - "Prices"
+        responses:
+          200:
+            description: price information.
+          404:
+            description: Record Not Found.
+          500:
+            description: "Database error"
+    """
+    try:
+        token = request.headers.get('Authorization', None)
+        
+        price_generated = PriceGen.query.filter_by(id=price_gen_id).first()
+        if price_generated is not None:
+          return jsonify({'price': price_generated.value}), 200
+        else:
+          raise Exception("This Project doesn't have a price configuration created")
+    except SQLAlchemyError as e:
+      return f'Error getting data: {e}', 500
+    except Exception as exp:
+      msg = f"Error: mesg ->{exp}"
+      app.logger.error(msg)
+      return msg, 404
+
 @app.route('/api/prices/exists/<project_id>', methods=['GET'])
 @token_required
 def exists_record_price_gen(project_id):
