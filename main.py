@@ -427,6 +427,15 @@ def get_project_weeks(m2, token):
         logging.error(f"Error getting spaces {exp}")
         return f"Error getting spaces {exp}", 500
 
+def get_workspace_by_project_id(project_id, token):
+    headers = {'Authorization': token}
+    api_url = M2_URL + M2_MODULE_API + '/' + str(project_id)
+    rv = requests.get(api_url, headers=headers)
+    if rv.status_code == 200:
+        return json.loads(rv.text)
+    elif rv.status_code == 500:
+      raise Exception("Cannot connect to the m2 module")
+    return None
 
 @app.route("/api/prices/spec", methods=['GET'])
 @token_required
@@ -439,6 +448,150 @@ def spec():
         "description": "Methods to configure Prices"
     }]
     return jsonify(swag)
+
+@app.route('/api/prices/data/<price_gen_id>', methods = ['GET'])
+@token_required
+def get_price_by_price_gen_id(price_gen_id):
+    """
+        Get Price of prices module by price gen ID from Projects module.
+        ---
+        parameters:
+          - in: path
+            name: price_gen_id
+            type: integer
+            description: Price gen ID
+        tags:
+        - "Prices"
+        responses:
+          200:
+            description: price information.
+          404:
+            description: Record Not Found.
+          500:
+            description: "Database error"
+    """
+    try:
+        token = request.headers.get('Authorization', None)
+        
+        price_generated = PriceGen.query.filter_by(id=price_gen_id).first()
+        if price_generated is not None:
+          return jsonify({'price': price_generated.value}), 200
+        else:
+          raise Exception("This Project doesn't have a price configuration created")
+    except SQLAlchemyError as e:
+      return f'Error getting data: {e}', 500
+    except Exception as exp:
+      msg = f"Error: mesg ->{exp}"
+      app.logger.error(msg)
+      return msg, 404
+
+@app.route('/api/prices/exists/<project_id>', methods=['GET'])
+@token_required
+def exists_record_price_gen(project_id):
+    """
+        Get if exists saved record in prices module
+        ---
+          parameters:
+            - in: path
+              name: project_id
+              type: integer
+              description: Saved project ID
+          tags:
+            - Prices_validation_requests
+          responses:
+            200:
+              description: Answer yes or no, if it exists
+            500:
+              description: Internal Server error or Database error
+    """
+    resp = 'No'
+
+    try:
+        pricegen = PriceGen.query.filter(PriceGen.project_id == project_id).first()
+        if pricegen is not None:
+             resp='Yes'
+        else:
+            resp='No'
+    except Exception as exp:
+        logging.error(f"Database Exception: {exp}")
+        return f"Database Exception: {exp}", 500
+
+    return jsonify({'status': resp})
+
+@app.route('/api/prices/workspaces/<project_id>', methods=['GET'])
+@token_required
+def exists_record_workspaces(project_id):
+    """
+        Get if exists saved record in m2 module
+        ---
+          parameters:
+            - in: path
+              name: project_id
+              type: integer
+              description: Saved project ID
+          tags:
+            - Prices_validation_requests
+          responses:
+            200:
+              description: Answer yes or no, if it exists
+            500:
+              description: Internal Server error or Database error
+    """
+    resp = 'No'
+
+    try:
+        token = request.headers.get('Authorization', None)
+        project_info = get_workspace_by_project_id(project_id,token)
+        if project_info is not None:
+            resp='Yes'
+        else:
+            resp='No'
+    except Exception as exp:
+        logging.error(f"Database Exception: {exp}")
+        return f"Database Exception: {exp}", 500
+
+    return jsonify({'status': resp})
+@app.route('/api/prices/update/<project_id>', methods=['PUT'])
+@token_required
+def update_prices_project_by_id(project_id):
+    """
+        Update Prices Project By ID
+        ---
+          consumes:
+            - "application/json"
+          tags:
+            - "Prices"
+          parameters:
+            - in: path
+              name: project_id
+              type: integer
+              description: Project ID
+            - in: "body"
+              name: "body"
+              required:
+                - m2
+              properties:
+                m2:
+                  type: number
+                  format: float
+          responses:
+            200:
+              description: Prices Project Object or deleted message
+            500:
+              description: "Database error"
+    """
+
+    try:
+        pricegen = PriceGen.query.filter_by(project_id=project_id).first()
+        if pricegen is None:
+            return '{}', 404
+        pricegen.m2 = request.json['m2'] if 'm2' in request.json else pricegen.m2
+        db.session.commit()
+
+        return jsonify({'status': 'ok'}), 200
+    except Exception as exp:
+        app.logger.error(f"Error in database: mesg ->{exp}")
+        return exp, 500
 
 
 @app.route('/api/prices/design/upload', methods=['POST'])
@@ -929,7 +1082,6 @@ def get_categories():
         'countries': [country.to_dict() for country in countries]
     })
 
-
 @app.route('/api/prices/save', methods=['POST'])
 @token_required
 def save_prices():
@@ -1041,9 +1193,9 @@ def save_prices():
     except Exception as exp:
         logging.error(f"Error getting Project {exp}")  # cambiar mensaje de exp
         return f"Error getting project {exp}", 500
-
+    
     # saving PriceGen
-
+    
     # If PriceGen exist take id, else, create a new PriceGen and take the
     # new id
     price_gen: PriceGen = PriceGen.query \
@@ -1057,7 +1209,19 @@ def save_prices():
             price_gen.project_id = request.json["project_id"]
 
         price_gen.value = request.json["value"]
-        price_gen.m2 = request.json["m2"]
+        if project['m2_gen_id'] is None:
+            price_gen.m2 = request.json["m2"]
+        else:
+            token = request.headers.get('Authorization', None)
+            m2_generated = get_workspace_by_project_id(request.json["project_id"],token)
+
+            if m2_generated is None:
+                logging.warning(f'No data founded in m2 generated: project#{request.json["project_id"]}')
+                price_gen.m2 = request.json["m2"]
+            else:
+                price_gen.m2= m2_generated['m2_generated_data']['area']
+
+
         db.session.add(price_gen)
         db.session.commit()
 
@@ -1164,18 +1328,6 @@ def update_project_by_id(project_id, data, token):
         raise Exception("Cannot connect to the projects module")
     return None
 
-
-def get_workspace_by_project_id(project_id, token):
-    headers = {'Authorization': token}
-    api_url = M2_URL + M2_MODULE_API + '/' + str(project_id)
-    rv = requests.get(api_url, headers=headers)
-    if rv.status_code == 200:
-        return json.loads(rv.text)
-    elif rv.status_code == 500:
-        raise Exception("Cannot connect to the m2 module")
-    return None
-
-
 @app.route('/api/prices/load/<project_id>', methods=['GET'])
 @token_required
 def get_project_prices(project_id):
@@ -1219,9 +1371,11 @@ def get_project_prices(project_id):
                     for dic in categories:
                         if dic['name'] != category.name:
                             flag = True
-                        else:
+                    for dic in categories:
+                        if dic['name'] == category.name:
                             flag = False
-                    if flag:
+                   
+                    if flag or len(categories) == 0:
                         c['code'] = category.code
                         c['id'] = detail['category_id']
                         c['name'] = category.name
@@ -1249,12 +1403,71 @@ def get_project_prices(project_id):
             if(len(categories) > 0):
                 return jsonify(resp), 200
             else:
-                return {}, 404
+                return {}, 200
         else:
             return {}, 404
     except Exception as exp:
         logging.error(f"Database Exception: {exp}")
         return f"Database Exception: {exp}", 500
+
+@app.route('/api/prices/design/<country_id>/m2/<m2>', methods=['GET'])
+@token_required
+def get_design_cost(country_id,m2):
+    """
+        Get a country's design cost
+        ---
+          parameters:
+            - in: path
+              name: country_id
+              type: integer
+              required: true
+              description: country id
+            - in: path
+              name: m2
+              type: number
+              format: float
+              required: true
+              description: project's m2
+          tags:
+            - Prices
+          responses:
+            200:
+              description: Dictionary with details of the price design cost
+            404:
+              description: No design cost loaded for this country
+            500:
+              description: Internal Server error or Database error
+    """
+    design = {}
+    design['name'] = 'COSTOS DE DISENO'
+    try:
+        pd = PriceDesign.query.filter(
+                    PriceDesign.country_id == country_id) .first()
+    
+    except Exception as exp:
+        logging.error(f"Database Exception: {exp}")
+        return f"Database Exception: {exp}", 500
+
+    design['value'] = 0
+    design['id'] = None
+    m2=float(m2)
+
+    if pd is not None:
+        design['id'] = pd.id
+
+        if m2 < 100:
+            design['value'] = pd.category_1
+        elif 100 <= m2 < 500:
+            design['value'] = pd.category_2
+        elif 500 <= m2 < 1000:
+            design['value'] = pd.category_3
+        elif 1000 <= m2 < 2500:
+            design['value'] = pd.category_4
+        else:
+            design['value'] = pd.category_5
+    else:
+        return {}, 404
+    return jsonify(design), 200   
 
 
 @app.route('/api/prices', methods=['POST'])
@@ -1338,7 +1551,7 @@ def get_estimated_price():
         'country',
         'm2'
     }
-
+ 
     for param in params:
         if param not in request.json:
             logging.error(f'{param} not in body')
@@ -1406,7 +1619,7 @@ def get_estimated_price():
                     'normal': price.medium,
                     'high': price.high
                 }
-
+    
             space_category_prices[workspaces[i]['space_id']] = category_prices
         i = i+1
 
@@ -1427,6 +1640,7 @@ def get_estimated_price():
     final_value = 0
     m2 = request.json['m2']
     weeks = get_project_weeks(m2, token)
+
     # iterate in categories and find prices
     for category in categories:
         cat_id = category['id']
@@ -1436,9 +1650,13 @@ def get_estimated_price():
         if category['code'] != 'BASE':
             for _space in workspaces:
                 space_id = _space['space_id']
+
                 if space_id in space_category_prices:
-                    final_value += (space_category_prices[space_id]
+                    if cat_id in space_category_prices[space_id]:
+                        final_value += (space_category_prices[space_id]
                                     [cat_id][cat_resp]) * _space['quantity']
+                    else:
+                        logging.warning(f"Not valid cat_id: {category['id']}")
                 else:
                     logging.warning(
                         f"Not valid space_id: {_space['space_id']}")
@@ -1452,16 +1670,20 @@ def get_estimated_price():
                     div_factor = float(calc_type[1])
                 calc_type = calc_type[0]
 
-            if calc_type == 'm2':
-                final_value += (space_category_prices[-1]
-                                [cat_id][cat_resp]*(m2/div_factor))
-            elif calc_type == 'weeks':
-                final_value += (space_category_prices[-1]
-                                [cat_id][cat_resp]*weeks)
+            if cat_id in space_category_prices[-1]:
+                if calc_type == 'm2':
+                    final_value += (space_category_prices[-1]
+                            [cat_id][cat_resp]*(m2/div_factor))
+                elif calc_type == 'weeks':
+                    final_value += (space_category_prices[-1]
+                            [cat_id][cat_resp]*weeks)
+                else:
+                    final_value += (space_category_prices[-1]
+                            [cat_id][cat_resp])
             else:
-                final_value += (space_category_prices[-1]
-                                [cat_id][cat_resp])
-
+                logging.warning(f"Not valid cat_id: {category['id']}")
+    
+    
     price_design: PriceDesign = PriceDesign.query.filter(
         PriceDesign.country_id == country.id).first()
 
@@ -1644,7 +1866,7 @@ def get_estimated_price_detail():
     final_value = 0
     m2 = request.json['m2']
     weeks = get_project_weeks(m2, token)
-
+    
     # iterate in categories and find prices
     for category in categories:
         cat_id = category['id']
@@ -1662,19 +1884,25 @@ def get_estimated_price_detail():
                 subcat_dict['resp'] = cat_resp
                 if(category['code'] == 'BASE'):
                     category['subcategories'].append(subcat_dict)
-
         if category['code'] != 'BASE':
             for _space in workspaces:
                 space_id = _space['space_id']
+
                 if space_id in space_category_prices:
-                    cat_value += (space_category_prices[space_id]
-                                  [cat_id][cat_resp]) * _space['quantity']
-                    final_value += cat_value
-                    category['value'] = cat_value
-                    if cat_subcategories:
-                        for subcat in category['subcategories']:
-                            subcat['value'] += (space_category_prices[space_id]
-                                                [subcat['id']][cat_resp]) * _space['quantity']
+                    if cat_id in space_category_prices[space_id]:
+                        cat_value += (space_category_prices[space_id]
+                                    [cat_id][cat_resp]) * _space['quantity']
+                        final_value += cat_value
+                        category['value'] = cat_value
+                        if cat_subcategories:
+                            for subcat in category['subcategories']:
+                                if subcat['id'] in space_category_prices[space_id]:
+                                    subcat['value'] += (space_category_prices[space_id]
+                                        [subcat['id']][cat_resp]) * _space['quantity']
+                                else:
+                                    logging.warning(f"Not valid subcat_id: {subcat['id']}")
+                    else:
+                        logging.warning(f"Not valid cat_id: {category['id']}")
                 else:
                     logging.warning(
                         f"Not valid space_id: {_space['space_id']}")
@@ -1688,35 +1916,47 @@ def get_estimated_price_detail():
                     div_factor = float(calc_type[1])
                 calc_type = calc_type[0]
 
-            if calc_type == 'm2':
-                cat_value = (space_category_prices[-1]
-                             [cat_id][cat_resp]*(m2/div_factor))
-                category['value'] = cat_value
-                final_value += cat_value
-                if cat_subcategories:
-                    for subcat in category['subcategories']:
-                        subcat['value'] += (space_category_prices[-1]
-                                            [subcat['id']][cat_resp]*(m2/div_factor))
-            elif calc_type == 'weeks':
-                cat_value = (space_category_prices[-1]
-                             [cat_id][cat_resp]*weeks)
-                category['value'] = cat_value
-                final_value += cat_value
-                if cat_subcategories:
-                    for subcat in category['subcategories']:
-                        subcat['value'] += (space_category_prices[-1]
-                                            [subcat['id']][cat_resp]*weeks)
+            if cat_id in space_category_prices[-1]:
+                if calc_type == 'm2':
+                    cat_value = (space_category_prices[-1]
+                            [cat_id][cat_resp]*(m2/div_factor))
+                    category['value'] = cat_value
+                    final_value += cat_value
+                    if cat_subcategories:
+                        for subcat in category['subcategories']:
+                            if subcat['id'] in space_category_prices[-1]:
+                                subcat['value'] += (space_category_prices[-1]
+                                                [subcat['id']][cat_resp]*(m2/div_factor))
+                            else:
+                                logging.warning(f"Not valid subcat_id: {subcat['id']}")
+                elif calc_type == 'weeks':
+                    cat_value = (space_category_prices[-1]
+                            [cat_id][cat_resp]*weeks)
+                    category['value'] = cat_value
+                    final_value += cat_value
+                    if cat_subcategories:
+                        for subcat in category['subcategories']:
+                            if subcat['id'] in space_category_prices[-1]:
+                                subcat['value'] += (space_category_prices[-1]
+                                                [subcat['id']][cat_resp]*weeks)
+                            else:
+                                logging.warning(f"Not valid subcat_id: {subcat['id']}")
+                else:
+                    cat_value = (space_category_prices[-1]
+                            [cat_id][cat_resp])
+                    category['value'] = cat_value
+                    final_value += cat_value
+                    if cat_subcategories:
+                        for subcat in category['subcategories']:
+                            if subcat['id'] in space_category_prices[-1]:
+                                subcat['value'] += (space_category_prices[-1]
+                                                [subcat['id']][cat_resp])
+                            else:
+                                logging.warning(f"Not valid subcat_id: {subcat['id']}")
             else:
-                cat_value = (space_category_prices[-1]
-                             [cat_id][cat_resp])
-                category['value'] = cat_value
-                final_value += cat_value
-                if cat_subcategories:
-                    for subcat in category['subcategories']:
-                        subcat['value'] += (space_category_prices[-1]
-                                            [subcat['id']][cat_resp])
+                logging.warning(f"Not valid cat_id: {category['id']}")
 
-    # do a filter if de value in category is zero
+    #do a filter if de value in category is zero
     cat_tmp = []
     for category in categories:
         if category['value'] > 0:
@@ -1726,7 +1966,7 @@ def get_estimated_price_detail():
 
     # getting prices design
     design = {}
-    design['name'] = 'COSTOS DISENO'
+    design['name'] = 'COSTOS DE DISENO'
 
     pd = PriceDesign.query.filter(
         PriceDesign.country_id == country.id) .first()
