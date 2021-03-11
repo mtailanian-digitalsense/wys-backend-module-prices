@@ -1961,6 +1961,10 @@ def get_currency_conversion(currency_code):
           name: body
           required:
           - value
+          properties:
+            value:
+                type: number
+                description: currency in USD to convert
         tags:
         - "Prices"
         produces:
@@ -1975,8 +1979,6 @@ def get_currency_conversion(currency_code):
             500:
               description: Internal Server error or Database error
     """
-
-    import pudb; pudb.set_trace()
 
     try:
         rate = get_exchange_rate_by_code(currency_code)
