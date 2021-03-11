@@ -6,6 +6,7 @@ import json
 import pandas as pd
 import pprint
 import requests
+import datetime as dt
 from flask import Flask, jsonify, abort, request
 from functools import wraps
 from flask_cors import CORS
@@ -45,6 +46,15 @@ M2_MODULE_HOST = os.getenv('M2_MODULE_HOST', '127.0.0.1')
 M2_MODULE_PORT = os.getenv('M2_MODULE_PORT', 5001)
 M2_MODULE_API = os.getenv('M2_MODULE_API', '/api/m2')
 M2_URL = f"http://{M2_MODULE_HOST}:{M2_MODULE_PORT}"
+
+CURRENCY_ID = "7669e0abe994488f808bf18d8b310e02"
+
+EXCHANGE_BASE_URL = "openexchangerates.org/api/"
+EXCHANGE_CURRENCY_URL = f"https://{EXCHANGE_BASE_URL}currencies.json"
+EXCHANGE_STATE_URL =    f"https://{EXCHANGE_BASE_URL}usage.json?app_id={CURRENCY_ID}"
+EXCHANGE_RATE_URL =     f"https://{EXCHANGE_BASE_URL}latest.json?app_id={CURRENCY_ID}"
+
+
 
 # Flask Configurations
 app = Flask(__name__)
@@ -119,13 +129,13 @@ class PriceCategory(db.Model):
     type = db.Column(db.CHAR, nullable=False)
     parent_category_id = db.Column(db.Integer, db.ForeignKey('price_category.id'))
     subcategories = db.relationship("PriceCategory",
-                 backref=db.backref('price_category', remote_side=[id]),
-                 cascade="all, delete, delete-orphan"
-                ) 
+                                    backref=db.backref(
+                                        'price_category', remote_side=[id]),
+                                    cascade="all, delete, delete-orphan"
+                                    )
     values = db.relationship("PriceValue",
                              backref="price_category",
                              cascade="all, delete, delete-orphan")
-                                
 
     def to_dict(self, full=False):
         obj_dict = {
@@ -137,7 +147,8 @@ class PriceCategory(db.Model):
 
         if full:
             obj_dict['parent_category_id'] = self.parent_category_id
-            obj_dict['subcategories'] = [subcategory.to_dict() for subcategory in self.subcategories]
+            obj_dict['subcategories'] = [subcategory.to_dict()
+                                         for subcategory in self.subcategories]
         return obj_dict
 
     def serialize(self, full=False):
@@ -157,10 +168,11 @@ class PriceGen(db.Model):
     value = db.Column(db.Float, nullable=False, default=0.0)
     m2 = db.Column(db.Float, nullable=False, default=0.0)
     relations = db.relationship("PriceGenHasPriceValue",
-                            backref=db.backref('price_gen_has_price_value', remote_side=[id]),
-                             cascade="all, delete, delete-orphan")
+                                backref=db.backref(
+                                    'price_gen_has_price_value', remote_side=[id]),
+                                cascade="all, delete, delete-orphan")
 
-    def to_dict(self,full=True):
+    def to_dict(self, full=True):
         """
         Convert to dictionary
         """
@@ -170,12 +182,14 @@ class PriceGen(db.Model):
             'm2': self.m2
         }
         if full:
-            obj_dict['price_value_saved'] = [relation.to_dict() for relation in self.relations]
+            obj_dict['price_value_saved'] = [relation.to_dict()
+                                             for relation in self.relations]
 
         return obj_dict
 
-    def serialize(self,full):
+    def serialize(self, full):
         return jsonify(self.to_dict())
+
 
 class PriceDesign(db.Model):
     """
@@ -197,6 +211,7 @@ class PriceDesign(db.Model):
         db.ForeignKey('price_country.id'),
         nullable=False)
 
+
 class PriceGenHasPriceValue(db.Model):
     """
     id: Id primary key
@@ -215,11 +230,12 @@ class PriceGenHasPriceValue(db.Model):
         nullable=False)
     price_value_option_selected = db.Column(db.String(45), nullable=False)
     prices_value = db.relationship("PriceValue",
-                            backref=db.backref('price_value', remote_side=[price_value_id]),
-                             cascade="all, delete, delete-orphan",
-                             single_parent=True)
+                                   backref=db.backref(
+                                       'price_value', remote_side=[price_value_id]),
+                                   cascade="all, delete, delete-orphan",
+                                   single_parent=True)
 
-    def to_dict(self,full=True):
+    def to_dict(self, full=True):
         """
         Convert to dictionary
         """
@@ -234,7 +250,7 @@ class PriceGenHasPriceValue(db.Model):
 
     def serialize(self):
         return jsonify(self.to_dict())
-  
+
 
 class PriceCountry(db.Model):
     """
@@ -249,11 +265,11 @@ class PriceCountry(db.Model):
                              backref="price_country",
                              cascade="all, delete, delete-orphan")
 
-    def to_dict(self,only_name=False):
-        obj_dict={}
-        if only_name == False: 
-             obj_dict['id']: self.id
-             obj_dict['default']: self.default
+    def to_dict(self, only_name=False):
+        obj_dict = {}
+        if only_name == False:
+            obj_dict['id'] = self.id
+            obj_dict['default'] = self.default
         obj_dict['name'] = self.name
         return obj_dict
 
@@ -285,10 +301,10 @@ class PriceValue(db.Model):
         db.ForeignKey('price_category.id'),
         nullable=False)
     country_name = db.relationship("PriceCountry",
-                             backref="price_country",
-                             remote_side="PriceValue.country_id",
-                             cascade="all, delete, delete-orphan",
-                             single_parent=True)
+                                   backref="price_country",
+                                   remote_side="PriceValue.country_id",
+                                   cascade="all, delete, delete-orphan",
+                                   single_parent=True)
 
     def to_dict(self):
         """
@@ -306,8 +322,57 @@ class PriceValue(db.Model):
     def serialize(self):
         return jsonify(self.to_dict())
 
+
+class ExchangeRates(db.Model):
+    """
+    id: Currency code
+    rate: Currency rate with base USD
+    """
+    id = db.Column(db.String(3), nullable=False, primary_key=True)
+    rate = db.Column(db.Float, nullable=False, default=0.0)
+
+    def to_dict(self):
+        """
+        Convert to dictionary
+        """
+        obj_dict = {
+            'rate_id': self.id,
+            'rate_value': self.rate
+        }
+
+        return obj_dict
+
+    def serialize(self):
+        return jsonify(self.to_dict())
+
+
+class ExchangeRateTimeStamp(db.Model):
+    """
+    id: Identifier, there is only one row with index 1.
+    lastUpdate: TimeStamp of the last time that ExchangeRates was updated.
+    """
+
+    id = db.Column(db.Integer, primary_key=True)
+    lastUpdate = db.Column(db.DateTime, nullable=False, default=dt.datetime(1970,1,1))
+
+    def to_dict(self):
+        """
+        Convert to dictionary
+        """
+        obj_dict = {
+            'rate_id': self.id,
+            'lastUpdate': self.lastUpdate
+        }
+
+        return obj_dict
+
+    def serialize(self):
+        return jsonify(self.to_dict())
+
+
 db.create_all()
 db.session.commit()
+
 
 def token_required(f):
     @wraps(f)
@@ -362,6 +427,7 @@ def get_project_weeks(m2, token):
         logging.error(f"Error getting spaces {exp}")
         return f"Error getting spaces {exp}", 500
 
+
 @app.route("/api/prices/spec", methods=['GET'])
 @token_required
 def spec():
@@ -409,13 +475,13 @@ def upload_design_prices():
 
         filename_split: list = filename.split('.')
         if not (filename_split[-1] == constants.VALID_EXTENSIONS_XLS or
-            filename_split[-1] == constants.VALID_EXTENSIONS_XLSX):
+                filename_split[-1] == constants.VALID_EXTENSIONS_XLSX):
             logging.warning(f'{filename_split[-1]} is not a valid extension')
             return {
                 'message': f'{filename_split[-1]} is not a valid extension'}, 420
 
         # Read sheets names as country name
-            
+
         if filename_split[-1] == constants.VALID_EXTENSIONS_XLSX:
             sheets: dict = pd.read_excel(file.read(), None, engine='openpyxl')
         else:
@@ -453,12 +519,13 @@ def upload_design_prices():
                 country_design_prices[country_id] = []
 
             for row in sheets[country_name].iterrows():
-                #Read Column B and finds out the price design category
+                # Read Column B and finds out the price design category
                 try:
                     design_category = row[1][1]
                     price_design_category = float(row[1][2])
-                    
-                    country_design_prices[country_id].append([design_category,price_design_category])
+
+                    country_design_prices[country_id].append(
+                        [design_category, price_design_category])
 
                 except Exception as exp:
                     msg = f"Error reading rows: {exp}"
@@ -486,7 +553,7 @@ def upload_design_prices():
                     db.session.rollback()
                     return jsonify({'message': f"Database error. {exp}"}), 500
 
-            for category,value in country_design_prices[country_id]:
+            for category, value in country_design_prices[country_id]:
                 if category == constants.CATEGORY_1:
                     qr.category_1 = value
                 if category == constants.CATEGORY_2:
@@ -505,7 +572,7 @@ def upload_design_prices():
                 db.session.rollback()
                 logging.error(f"Database error {exp}")
                 return jsonify({'message': f"Database error {exp}"}), 500
-                
+
         # Return status
         return jsonify({'status': 'OK'})
     except SQLAlchemyError as e:
@@ -515,7 +582,8 @@ def upload_design_prices():
     except Exception as exp:
         app.logger.error(f"Error: mesg ->{exp}")
         return jsonify({'message': exp}), 500
-     
+
+
 @app.route('/api/prices/upload', methods=['POST'])
 def upload_prices():
     """
@@ -563,7 +631,7 @@ def upload_prices():
 
     logging.debug(sheets)
 
-    flag=False
+    flag = False
     # For Each sheet
     for country_name in sheets:
         try:
@@ -633,7 +701,7 @@ def upload_prices():
 
             # Read Column "PARAMETRO" and find a "PriceCategory"
             category_name = row[1][constants.ROW_MODULO] if is_base else row[1][constants.ROW_PARAMETRO]
-            #finding if it's type A or B
+            # finding if it's type A or B
             if len(category_name.split('(')) > 1:
                 category_type = 'B'
             else:
@@ -650,7 +718,7 @@ def upload_prices():
             '''
             if not last_category_name is None and last_category_name != category_name:
                 last_category = category_hash[last_category_name]
-                #print(last_category.id)
+                # print(last_category.id)
                 try:
                     if is_base:
                         value = PriceValue.query.filter(
@@ -664,7 +732,7 @@ def upload_prices():
                 except Exception as exp:
                     logging.error(f"Database error {exp}")
                     return jsonify({'message': f"Database error {exp}"}), 500
-            
+
                 if value is None:
                     value = PriceValue()
                     try:
@@ -678,7 +746,7 @@ def upload_prices():
                     except Exception as exp:
                         logging.error(f"Database error {exp}")
                         return jsonify({'message': f"Database error {exp}"}), 500
-                
+
                 value.low = category_low_value
                 value.medium = category_medium_value
                 value.high = category_high_value
@@ -696,7 +764,7 @@ def upload_prices():
                 category: PriceCategory = PriceCategory.query \
                     .filter(PriceCategory.name == category_name) \
                     .first()
-                
+
                 # If PriceCategory exist get id else create and get the id.
                 if category is None:
                     try:
@@ -718,8 +786,8 @@ def upload_prices():
                     category_hash[category_name] = category
             else:
                 category: PriceCategory = PriceCategory.query \
-                        .filter(PriceCategory.name == category_name) \
-                        .first()
+                    .filter(PriceCategory.name == category_name) \
+                    .first()
 
             subcategory_name = row[1][constants.ROW_DETALLE]
             subcategory_code = ''
@@ -779,7 +847,7 @@ def upload_prices():
 
             module = modules_hash[module_name] if not is_base else None
             subcategory = subcategory_hash[subcategory_code] if have_subcat else category_hash[category_name]
-            
+
             try:
                 if is_base:
                     value = PriceValue.query.filter(
@@ -815,7 +883,7 @@ def upload_prices():
             value.low = low
             value.medium = medium
             value.high = high
-            
+
             last_category_name = category_name
             last_category_is_base = is_base
             # commit database
@@ -827,6 +895,7 @@ def upload_prices():
                 return jsonify({'message': f"Database error {exp}"}), 500
     # Return status
     return jsonify({'status': 'OK'})
+
 
 @app.route('/api/prices/create', methods=['GET'])
 @token_required
@@ -846,7 +915,8 @@ def get_categories():
     """
     try:
         # Query all Categories en DB.
-        categories: list = PriceCategory.query.filter(PriceCategory.parent_category_id == None).all()
+        categories: list = PriceCategory.query.filter(
+            PriceCategory.parent_category_id == None).all()
         countries: list = PriceCountry.query.all()
 
     except Exception as exp:
@@ -945,7 +1015,7 @@ def save_prices():
                 description: Internal server error.
     """
 
-     # Check JSON Input
+    # Check JSON Input
     params = {
         'categories',
         'country',
@@ -954,7 +1024,7 @@ def save_prices():
         'm2',
         'workspaces'
     }
-   
+
     for param in params:
         if param not in request.json:
             logging.error(f'{param} not in body')
@@ -969,12 +1039,11 @@ def save_prices():
             f'/{request.json["project_id"]}', headers=headers)
         project = json.loads(resp.content.decode('utf-8'))
     except Exception as exp:
-        logging.error(f"Error getting Project {exp}")#cambiar mensaje de exp
+        logging.error(f"Error getting Project {exp}")  # cambiar mensaje de exp
         return f"Error getting project {exp}", 500
-    
 
-    #saving PriceGen
-    
+    # saving PriceGen
+
     # If PriceGen exist take id, else, create a new PriceGen and take the
     # new id
     price_gen: PriceGen = PriceGen.query \
@@ -982,11 +1051,11 @@ def save_prices():
         .first()
 
     price_gen_id: int
-    try: 
+    try:
         if price_gen is None:
             price_gen = PriceGen()
             price_gen.project_id = request.json["project_id"]
-        
+
         price_gen.value = request.json["value"]
         price_gen.m2 = request.json["m2"]
         db.session.add(price_gen)
@@ -998,13 +1067,14 @@ def save_prices():
         logging.error(f"Error in database {exp}")
         db.session.rollback()
         return jsonify({'message': f"Error in database {exp}"}), 500
-    
-    #updating project
-    project = update_project_by_id(request.json["project_id"], {'price_gen_id': price_gen_id}, token)
+
+    # updating project
+    project = update_project_by_id(request.json["project_id"], {
+                                   'price_gen_id': price_gen_id}, token)
     if project is None:
         return "Cannot update the Project because doesn't exist", 404
 
-    #dictionary lists
+    # dictionary lists
     try:
         workspaces: list = request.json['workspaces']
         categories: list = request.json['categories']
@@ -1029,7 +1099,6 @@ def save_prices():
         except Exception as exp:
             logging.error(f"Error getting spaces {exp}")
             return f"Error getting spaces {exp}", 500
-    
 
     # Get Country id
     country_name = request.json['country']
@@ -1037,18 +1106,18 @@ def save_prices():
         PriceCountry.name == country_name.upper()).first()
     if country is None:
         return f'{country_name} is a invalid country'
-    
+
      # Find prices according to space
- 
-    i=0
-    while i<len(workspaces):
+
+    i = 0
+    while i < len(workspaces):
         space_name = spaces[workspaces[i]['space_id']]
         # Get PriceModule id
         price_module: PriceModule = PriceModule.query.filter(
             PriceModule.name == space_name).first()
         if price_module is None:
-            logging.warning(f'No module name: {space_name}')               
-        else:            
+            logging.warning(f'No module name: {space_name}')
+        else:
             # Get specific price and save record relation:
             for category in categories:
                 if category['code'] == 'BASE':
@@ -1058,9 +1127,10 @@ def save_prices():
 
                 prices = PriceValue.query.filter(PriceValue.country_id == country.id) \
                     .filter(PriceValue.module_id == module_id) \
-                        .filter(PriceValue.category_id == category['id']).first()
+                    .filter(PriceValue.category_id == category['id']).first()
                 if prices is None:
-                    logging.warning(f'No price value for category: {category["name"]} and module: {price_module.name}')
+                    logging.warning(
+                        f'No price value for category: {category["name"]} and module: {price_module.name}')
                 else:
                     pghpv = PriceGenHasPriceValue.query.filter(PriceGenHasPriceValue.price_gen_id == price_gen_id) \
                         .filter(PriceGenHasPriceValue.price_value_id == prices.id).first()
@@ -1078,8 +1148,8 @@ def save_prices():
                         logging.error(f"Error in database {exp}")
                         db.session.rollback()
                         return jsonify({'message': f"Error in database {exp}"}), 500
-        i=i+1
- 
+        i = i+1
+
     # Return status
     return jsonify({'status': 'OK'})
 
@@ -1094,6 +1164,7 @@ def update_project_by_id(project_id, data, token):
         raise Exception("Cannot connect to the projects module")
     return None
 
+
 def get_workspace_by_project_id(project_id, token):
     headers = {'Authorization': token}
     api_url = M2_URL + M2_MODULE_API + '/' + str(project_id)
@@ -1101,8 +1172,9 @@ def get_workspace_by_project_id(project_id, token):
     if rv.status_code == 200:
         return json.loads(rv.text)
     elif rv.status_code == 500:
-      raise Exception("Cannot connect to the m2 module")
+        raise Exception("Cannot connect to the m2 module")
     return None
+
 
 @app.route('/api/prices/load/<project_id>', methods=['GET'])
 @token_required
@@ -1126,23 +1198,24 @@ def get_project_prices(project_id):
               description: Internal Server error or Database error
     """
     resp = {}
-    categories=[]
+    categories = []
 
     try:
-        pricegen = PriceGen.query.filter(PriceGen.project_id == project_id).first()
+        pricegen = PriceGen.query.filter(
+            PriceGen.project_id == project_id).first()
         if pricegen is not None:
             pg_dict = pricegen.to_dict()
             resp['value'] = pg_dict['value']
             resp['m2'] = pg_dict['m2']
             for element in pg_dict['price_value_saved']:
                 detail = element['price_value_detail'][0]
-                
-                c={}
+
+                c = {}
                 try:
                     category: PriceCategory = PriceCategory.query \
-                                .filter(PriceCategory.id == detail['category_id']) \
-                                .first()
-                    flag=False
+                        .filter(PriceCategory.id == detail['category_id']) \
+                        .first()
+                    flag = False
                     for dic in categories:
                         if dic['name'] != category.name:
                             flag = True
@@ -1162,22 +1235,23 @@ def get_project_prices(project_id):
 
             # Getting workspaces
             token = request.headers.get('Authorization', None)
-            project = get_workspace_by_project_id(pg_dict['project_id'],token)
+            project = get_workspace_by_project_id(pg_dict['project_id'], token)
 
             if(project is not None):
-                resp['workspaces']=project['m2_generated_data']['workspaces']
+                resp['workspaces'] = project['m2_generated_data']['workspaces']
             else:
-                logging.warning(f'No workspaces saved yet: project#{project_id}')
+                logging.warning(
+                    f'No workspaces saved yet: project#{project_id}')
                 resp['workspaces'] = []
 
-            resp['categories'] = categories  
+            resp['categories'] = categories
 
             if(len(categories) > 0):
-                return jsonify(resp), 200  
+                return jsonify(resp), 200
             else:
                 return {}, 404
         else:
-            return {},404
+            return {}, 404
     except Exception as exp:
         logging.error(f"Database Exception: {exp}")
         return f"Database Exception: {exp}", 500
@@ -1281,7 +1355,7 @@ def get_estimated_price():
             HTTPStatus.BAD_REQUEST
 
     spaces = {}
-  
+
     # Get all spaces.
     token = request.headers.get('Authorization', None)
     for _space in workspaces:
@@ -1307,8 +1381,8 @@ def get_estimated_price():
 
     # Find prices according to space
     space_category_prices = {}
-    #for _space in workspaces:
-    i=0
+    # for _space in workspaces:
+    i = 0
 
     while i < len(workspaces):
         space_name = spaces[workspaces[i]['space_id']]
@@ -1318,7 +1392,7 @@ def get_estimated_price():
         if price_module is None:
             logging.warning(f'No space name: {space_name}')
             workspaces.remove(workspaces[i])
-            i=i-1
+            i = i-1
         else:
             # Get all prices and save in a map:
             prices = PriceValue.query.filter(PriceValue.country_id == country.id) \
@@ -1334,8 +1408,8 @@ def get_estimated_price():
                 }
 
             space_category_prices[workspaces[i]['space_id']] = category_prices
-        i=i+1
-  
+        i = i+1
+
     base_category_prices = {}
     # Get all base prices and save in a map:
     base_prices = PriceValue.query.filter(PriceValue.country_id == country.id) \
@@ -1358,15 +1432,16 @@ def get_estimated_price():
         cat_id = category['id']
         cat_resp = category['resp']
         cat_name = category['name']
-        
+
         if category['code'] != 'BASE':
             for _space in workspaces:
                 space_id = _space['space_id']
                 if space_id in space_category_prices:
                     final_value += (space_category_prices[space_id]
-                                [cat_id][cat_resp]) * _space['quantity']
+                                    [cat_id][cat_resp]) * _space['quantity']
                 else:
-                    logging.warning(f"Not valid space_id: {_space['space_id']}")
+                    logging.warning(
+                        f"Not valid space_id: {_space['space_id']}")
         else:
             calc_type = ''
             div_factor = 1
@@ -1379,18 +1454,17 @@ def get_estimated_price():
 
             if calc_type == 'm2':
                 final_value += (space_category_prices[-1]
-                        [cat_id][cat_resp]*(m2/div_factor))
+                                [cat_id][cat_resp]*(m2/div_factor))
             elif calc_type == 'weeks':
                 final_value += (space_category_prices[-1]
-                        [cat_id][cat_resp]*weeks)
+                                [cat_id][cat_resp]*weeks)
             else:
                 final_value += (space_category_prices[-1]
-                        [cat_id][cat_resp])
-    
-    
+                                [cat_id][cat_resp])
+
     price_design: PriceDesign = PriceDesign.query.filter(
-            PriceDesign.country_id == country.id).first()
-    
+        PriceDesign.country_id == country.id).first()
+
     if price_design is not None:
         if m2 < 100:
             final_value += price_design.category_1
@@ -1404,6 +1478,7 @@ def get_estimated_price():
             final_value += price_design.category_5
 
     return jsonify({'value': final_value}), 200
+
 
 @app.route('/api/prices/detail', methods=['POST'])
 @token_required
@@ -1498,7 +1573,7 @@ def get_estimated_price_detail():
             HTTPStatus.BAD_REQUEST
 
     spaces = {}
-  
+
     # Get all spaces.
     token = request.headers.get('Authorization', None)
     for _space in workspaces:
@@ -1524,8 +1599,8 @@ def get_estimated_price_detail():
 
     # Find prices according to space
     space_category_prices = {}
-    #for _space in workspaces:
-    i=0
+    # for _space in workspaces:
+    i = 0
     while i < len(workspaces):
         space_name = spaces[workspaces[i]['space_id']]
         # Get PriceModule id
@@ -1534,7 +1609,7 @@ def get_estimated_price_detail():
         if price_module is None:
             logging.warning(f'No space name: {space_name}')
             workspaces.remove(workspaces[i])
-            i=i-1
+            i = i-1
         else:
             # Get all prices and save in a map:
             prices = PriceValue.query.filter(PriceValue.country_id == country.id) \
@@ -1550,8 +1625,8 @@ def get_estimated_price_detail():
                 }
 
             space_category_prices[workspaces[i]['space_id']] = category_prices
-        i=i+1
-    
+        i = i+1
+
     base_category_prices = {}
     # Get all base prices and save in a map:
     base_prices = PriceValue.query.filter(PriceValue.country_id == country.id) \
@@ -1575,7 +1650,8 @@ def get_estimated_price_detail():
         cat_id = category['id']
         cat_resp = category['resp']
         cat_name = category['name']
-        cat_obj = PriceCategory.query.filter(PriceCategory.name == category['name']).first()
+        cat_obj = PriceCategory.query.filter(
+            PriceCategory.name == category['name']).first()
         cat_subcategories = cat_obj.subcategories
         category['subcategories'] = []
         cat_value = 0
@@ -1592,15 +1668,16 @@ def get_estimated_price_detail():
                 space_id = _space['space_id']
                 if space_id in space_category_prices:
                     cat_value += (space_category_prices[space_id]
-                                [cat_id][cat_resp]) * _space['quantity']
+                                  [cat_id][cat_resp]) * _space['quantity']
                     final_value += cat_value
                     category['value'] = cat_value
                     if cat_subcategories:
                         for subcat in category['subcategories']:
                             subcat['value'] += (space_category_prices[space_id]
-                                [subcat['id']][cat_resp]) * _space['quantity']
+                                                [subcat['id']][cat_resp]) * _space['quantity']
                 else:
-                    logging.warning(f"Not valid space_id: {_space['space_id']}")
+                    logging.warning(
+                        f"Not valid space_id: {_space['space_id']}")
         else:
             calc_type = ''
             div_factor = 1
@@ -1613,47 +1690,47 @@ def get_estimated_price_detail():
 
             if calc_type == 'm2':
                 cat_value = (space_category_prices[-1]
-                        [cat_id][cat_resp]*(m2/div_factor))
+                             [cat_id][cat_resp]*(m2/div_factor))
                 category['value'] = cat_value
                 final_value += cat_value
                 if cat_subcategories:
                     for subcat in category['subcategories']:
                         subcat['value'] += (space_category_prices[-1]
-                                        [subcat['id']][cat_resp]*(m2/div_factor))
+                                            [subcat['id']][cat_resp]*(m2/div_factor))
             elif calc_type == 'weeks':
                 cat_value = (space_category_prices[-1]
-                        [cat_id][cat_resp]*weeks)
+                             [cat_id][cat_resp]*weeks)
                 category['value'] = cat_value
                 final_value += cat_value
                 if cat_subcategories:
                     for subcat in category['subcategories']:
                         subcat['value'] += (space_category_prices[-1]
-                                        [subcat['id']][cat_resp]*weeks)
+                                            [subcat['id']][cat_resp]*weeks)
             else:
                 cat_value = (space_category_prices[-1]
-                        [cat_id][cat_resp])
+                             [cat_id][cat_resp])
                 category['value'] = cat_value
                 final_value += cat_value
                 if cat_subcategories:
                     for subcat in category['subcategories']:
                         subcat['value'] += (space_category_prices[-1]
-                                        [subcat['id']][cat_resp])
-    
-    #do a filter if de value in category is zero
+                                            [subcat['id']][cat_resp])
+
+    # do a filter if de value in category is zero
     cat_tmp = []
     for category in categories:
         if category['value'] > 0:
             cat_tmp.append(category)
-    
+
     categories = cat_tmp
 
-    #getting prices design
+    # getting prices design
     design = {}
     design['name'] = 'COSTOS DISENO'
 
     pd = PriceDesign.query.filter(
-                    PriceDesign.country_id == country.id) .first()
-    
+        PriceDesign.country_id == country.id) .first()
+
     design['value'] = 0
     design['id'] = None
 
@@ -1674,15 +1751,251 @@ def get_estimated_price_detail():
         final_value += design['value']
 
     resp = {
-            'categories': categories, 
-            'design': design,
-            'value': final_value, 
-            'country': country_name,
-            'm2': m2,
-            'weeks': weeks
+        'categories': categories,
+        'design': design,
+        'value': final_value,
+        'country': country_name,
+        'm2': m2,
+        'weeks': weeks
+    }
+    return jsonify(resp), 200
+
+
+
+@app.route('/api/prices/currencies', methods=['GET'])
+@token_required
+def get_currencies():
+    """
+        Get Currency Codes
+        ---
+        tags:
+        - "Prices"
+        produces:
+        - "application/json"
+        responses:
+            200:
+              description: Currency codes used in /api/prices/exchange. They follow the ISO currency codes standard.
+            500:
+              description: Database or Internal Server error
+    """
+
+    rv = requests.get(EXCHANGE_CURRENCY_URL)
+    if rv.status_code == 200:
+        return json.loads(rv.text), 200
+
+    elif rv.status_code == 500:
+        return "Cannot connect to the currency exchange source", 500
+    
+    return "Database or Internal Server error", 500
+
+
+def update_exchanges():
+    """Update the .. if we have enough requests.
+    This function consumes one request, be careful.
+
+    Exceptions:
+    - Exception: Currency exchange source requests got exhausted
+    - Unbound Exceptions: idk.
+    """
+
+    try:
+        # Verify remaining requests
+        ###########################
+
+        rv_account_state = requests.get(EXCHANGE_STATE_URL)
+        account_state = json.loads(rv_account_state.text)
+
+        remaining = account_state["data"]["usage"]["requests_remaining"]
+
+        if remaining < 50:
+            raise Exception("Currency exchange source requests got exhausted")
+
+        # Grab data, update table
+        #########################
+
+        rv_exchange_rates = requests.get(EXCHANGE_RATE_URL)
+        exchange_rates = json.loads(rv_exchange_rates.text)
+
+        new_rates = exchange_rates["rates"]
+        old_rates = ExchangeRates.query.all()
+
+        if old_rates:
+            old_rates_dict = {rate.id: rate for rate in old_rates}
+
+            for new_key, new_rate in new_rates.items():
+                old_rates_dict[new_key].rate = new_rate
+                del old_rates_dict[new_key]
+
+            # remaining rates are deleted from db.
+            for rate in old_rates_dict.values():
+                db.session.delete(rate)
+
+        else:
+            for new_key, new_rate in new_rates.items():
+                new_item = ExchangeRates()
+
+                new_item.id = new_key
+                new_item.rate = new_rate
+
+                db.session.add(new_item)
+
+        db.session.commit()
+
+    except:
+        raise
+
+
+def get_exchange_rate_by_code(code: str):
+    """
+
+    Returns:
+    - float > 0: the correct rate
+    - -1: the code is invalid
+
+    Exception Management:
+    - Exception: Problems with database.
+    - Unbound Exceptions: idk.
+    """
+
+    is_necesary_update = False
+
+    # Update rates if day is over or if there is no data
+    ####################################################
+    try:
+        exchange_state = ExchangeRateTimeStamp.query.get(1)
+        last_update = exchange_state.lastUpdate.date()
+
+        if last_update != dt.date.today():
+            is_necesary_update = True
+
+    except AttributeError as e:
+        first_timestamp = ExchangeRateTimeStamp()
+        first_timestamp.lastUpdate = dt.datetime.now()
+
+        db.session.add(first_timestamp)
+        db.session.commit()
+
+        is_necesary_update = True
+
+    except Exception as e:
+        print (e)
+        raise Exception("Problems with database")
+
+
+    try:
+        if is_necesary_update:
+            update_exchanges()
+
+    except:
+        # unbounds errors.
+        raise
+
+    # Grab the data
+    ###############
+
+    try:
+        exchange_rate = ExchangeRates.query.get(code)
+        return exchange_rate.rate
+
+    except AttributeError:
+        return -1
+
+
+@app.route('/api/prices/exchange/<currency_code>', methods=['GET'])
+@token_required
+def get_currency_exchange(currency_code):
+    """
+        Get currency exchange according to specified currency_code. 
+        The rates are updated every day.
+        ---
+          parameters:
+            - in: path
+              name: currency_code
+              type: string
+              description: Valid currency code specified in ISO standard 4217.
+          tags:
+            - Prices
+          responses:
+            200:
+              description: Floating point value that represents an exchange rate
+            404:
+              description: Currency code not found.
+            500:
+              description: Internal Server error or Database error
+    """
+
+    # Obtenemos el factor de cambio, o exchange rate
+    # import pudb; pudb.set_trace()
+
+    try:
+        rate = get_exchange_rate_by_code(currency_code)
+    
+        if rate == -1:
+            return f"Code {currency_code} is not valid", 404
+
+        resp = {
+            "rate": rate
         }
-    return jsonify(resp), 200   
+
+        return jsonify(resp), 200
+
+    except Exception as e:
+        return f"Internal error: {e}", 500
+
+
+## Esto debería unirse con el método de arriba, la única diferencia es el método POST y un producto
+@app.route('/api/prices/exchange/<currency_code>', methods=['POST'])
+@token_required
+def get_currency_conversion(currency_code):
+    """
+        Get currency exchange and conversion according to specified currency_code. 
+        When a value is posted, is assumed that is USD.
+        The rates are updated every day.
+        ---
+        parameters:
+        - in: "path"
+          name: currency_code
+          type: string
+          description: Valid currency code specified in ISO standard 4217.
+        - in: "body"
+          name: body
+          required:
+          - value
+        tags:
+        - "Prices"
+        produces:
+        - "application/json"
+        consumes:
+        - "application/json"
+        responses:
+            200:
+              description: Floating point value that represents an exchange rate
+            404:
+              description: Currency code not found.
+            500:
+              description: Internal Server error or Database error
+    """
+
+    import pudb; pudb.set_trace()
+
+    try:
+        rate = get_exchange_rate_by_code(currency_code)
+    
+        if rate == -1:
+            return f"Code {currency_code} is not valid", 404
+
+        value = float(request.json["value"])
+
+        resp = {
+            "rate": rate,
+            "conversion": rate * value
+        }
+
+        return jsonify(resp), 200
+
+    except Exception as e:
+        return f"Internal error: {e}", 500
+
 
 if __name__ == '__main__':
     app.run(host=APP_HOST, port=APP_PORT, debug=True)
-
