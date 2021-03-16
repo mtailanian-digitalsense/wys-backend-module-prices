@@ -4,9 +4,9 @@ import os
 import jwt
 import json
 import pandas as pd
-import pprint
 import requests
 import datetime as dt
+from pprint import pprint
 from flask import Flask, jsonify, abort, request
 from functools import wraps
 from flask_cors import CORS
@@ -427,6 +427,7 @@ def get_project_weeks(m2, token):
         logging.error(f"Error getting spaces {exp}")
         return f"Error getting spaces {exp}", 500
 
+
 def get_workspace_by_project_id(project_id, token):
     headers = {'Authorization': token}
     api_url = M2_URL + M2_MODULE_API + '/' + str(project_id)
@@ -436,6 +437,7 @@ def get_workspace_by_project_id(project_id, token):
     elif rv.status_code == 500:
       raise Exception("Cannot connect to the m2 module")
     return None
+
 
 @app.route("/api/prices/spec", methods=['GET'])
 @token_required
@@ -448,6 +450,7 @@ def spec():
         "description": "Methods to configure Prices"
     }]
     return jsonify(swag)
+
 
 @app.route('/api/prices/data/<price_gen_id>', methods = ['GET'])
 @token_required
@@ -485,6 +488,7 @@ def get_price_by_price_gen_id(price_gen_id):
       app.logger.error(msg)
       return msg, 404
 
+
 @app.route('/api/prices/exists/<project_id>', methods=['GET'])
 @token_required
 def exists_record_price_gen(project_id):
@@ -517,6 +521,7 @@ def exists_record_price_gen(project_id):
         return f"Database Exception: {exp}", 500
 
     return jsonify({'status': resp})
+
 
 @app.route('/api/prices/workspaces/<project_id>', methods=['GET'])
 @token_required
@@ -551,6 +556,8 @@ def exists_record_workspaces(project_id):
         return f"Database Exception: {exp}", 500
 
     return jsonify({'status': resp})
+
+
 @app.route('/api/prices/update/<project_id>', methods=['PUT'])
 @token_required
 def update_prices_project_by_id(project_id):
@@ -787,9 +794,13 @@ def upload_prices():
     flag = False
     # For Each sheet
     for country_name in sheets:
+
+        # Get country information
+        ##################
+
         try:
-            # If country exist take id, else, create a new country and take the
-            # new id
+            # If country exist take id.
+            # Else, create a new country and take the new id
             country: PriceCountry = PriceCountry.query \
                 .filter(PriceCountry.name == country_name.upper()) \
                 .first()
@@ -821,11 +832,33 @@ def upload_prices():
         category_high_value = 0
 
         for row in sheets[country_name].iterrows():
-            is_base = False
-            if row[1][constants.ROW_PRE] == 'BASE':
-                is_base = True
+
+            is_base = None
+            category_name = None
+            category_type = None
+
+            # Get category information
+            ##########################
+
+            is_base = True if row[1][constants.ROW_PRE] == 'BASE' else False
+
             if last_category_is_base is None:
                 last_category_is_base = is_base
+
+            # Read Column "PARAMETRO" and find a "PriceCategory"
+            category_name = row[1][constants.ROW_MODULO] if is_base else row[1][constants.ROW_PARAMETRO]
+
+            # finding if it's type A, B or C
+            if len(category_name.split('(')) > 1 or category_name in constants.TYPE_B:
+                category_type = 'B'
+            elif category_name in constants.TYPE_C:
+                category_type = 'C'
+            else:
+                category_type = 'A'
+
+            # Get modules information
+            #########################
+
             # Carga de costos variables
             # Read Column "MODULO" and find Module by name
             if not is_base:
@@ -849,16 +882,9 @@ def upload_prices():
                     else:
                         modules_hash[module_name] = module
                 else:
+                    # Creo que deberíamos extraer el módulo de la tabla hash, o no?
                     module: PriceModule = PriceModule.query.filter(
                         PriceModule.name == module_name).first()
-
-            # Read Column "PARAMETRO" and find a "PriceCategory"
-            category_name = row[1][constants.ROW_MODULO] if is_base else row[1][constants.ROW_PARAMETRO]
-            # finding if it's type A or B
-            if len(category_name.split('(')) > 1:
-                category_type = 'B'
-            else:
-                category_type = 'A'
 
             '''
             if  last_category_name != category_name and same_category_cycle == True:
@@ -886,13 +912,16 @@ def upload_prices():
                     logging.error(f"Database error {exp}")
                     return jsonify({'message': f"Database error {exp}"}), 500
 
+                # Esto puede integrarse arriba, comparten la misma excepción.
                 if value is None:
                     value = PriceValue()
                     try:
                         country.values.append(value)
                         db.session.commit()
+
                         last_category.values.append(value)
                         db.session.commit()
+
                         if not last_category_is_base:
                             module.values.append(value)
                             db.session.commit()
@@ -913,6 +942,7 @@ def upload_prices():
                 if last_category_name == category_name and last_category_name is not None:
                     same_category_cycle = True
             '''
+
             if category_name not in category_hash:
                 category: PriceCategory = PriceCategory.query \
                     .filter(PriceCategory.name == category_name) \
@@ -924,7 +954,6 @@ def upload_prices():
                         category = PriceCategory()
                         category.name = category_name
                         category.code = category_name if not is_base else 'BASE'
-
                         category.type = category_type
 
                         db.session.add(category)
@@ -936,6 +965,9 @@ def upload_prices():
                         db.session.rollback()
                         return jsonify({'message': f"Database error. {exp}"}), 500
                 else:
+                    category.code = category_name if not is_base else 'BASE'
+                    category.type = category_type
+                    db.session.commit()
                     category_hash[category_name] = category
             else:
                 category: PriceCategory = PriceCategory.query \
@@ -944,9 +976,8 @@ def upload_prices():
 
             subcategory_name = row[1][constants.ROW_DETALLE]
             subcategory_code = ''
-            have_subcat = True
-            if pd.isna(subcategory_name):
-                have_subcat = False
+            have_subcat = False if pd.isna(subcategory_name) else True
+            
             if have_subcat:
                 if flag:
                     print('have_subcat')
@@ -992,14 +1023,17 @@ def upload_prices():
                 logging.error(msg)
                 return jsonify({"message": msg}), 421
 
-            # Get a price value by PriceCountry, PriceCategory and PriceModule. If Exist
-            # get Object else, create a new object. Update or create the values
-            # low, medium and high.
+            # Get a price value by PriceCountry, PriceCategory and PriceModule.
+            # If Exist get Object else, create a new object.
+            # Update or create the values low, medium and high.
             module_id = modules_hash[module_name].id if not is_base else None
             subcategory_id = subcategory_hash[subcategory_code].id if have_subcat else category_hash[category_name].id
 
             module = modules_hash[module_name] if not is_base else None
             subcategory = subcategory_hash[subcategory_code] if have_subcat else category_hash[category_name]
+
+            # Get value information
+            #######################
 
             try:
                 if is_base:
@@ -1081,6 +1115,7 @@ def get_categories():
         'categories': [cat.to_dict() for cat in categories],
         'countries': [country.to_dict() for country in countries]
     })
+
 
 @app.route('/api/prices/save', methods=['POST'])
 @token_required
@@ -1328,6 +1363,7 @@ def update_project_by_id(project_id, data, token):
         raise Exception("Cannot connect to the projects module")
     return None
 
+
 @app.route('/api/prices/load/<project_id>', methods=['GET'])
 @token_required
 def get_project_prices(project_id):
@@ -1409,6 +1445,7 @@ def get_project_prices(project_id):
     except Exception as exp:
         logging.error(f"Database Exception: {exp}")
         return f"Database Exception: {exp}", 500
+
 
 @app.route('/api/prices/design/<country_id>/m2/<m2>', methods=['GET'])
 @token_required
@@ -1779,6 +1816,8 @@ def get_estimated_price_detail():
         'm2'
     }
 
+    import pudb; pudb.set_trace()
+
     for param in params:
         if param not in request.json:
             logging.error(f'{param} not in body')
@@ -2001,7 +2040,6 @@ def get_estimated_price_detail():
     return jsonify(resp), 200
 
 
-
 @app.route('/api/prices/currencies', methods=['GET'])
 @token_required
 def get_currencies():
@@ -2163,9 +2201,6 @@ def get_currency_exchange(currency_code):
             500:
               description: Internal Server error or Database error
     """
-
-    # Obtenemos el factor de cambio, o exchange rate
-    # import pudb; pudb.set_trace()
 
     try:
         rate = get_exchange_rate_by_code(currency_code)
