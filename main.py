@@ -127,6 +127,7 @@ class PriceCategory(db.Model):
     code = db.Column(db.String(100), nullable=False)
     name = db.Column(db.String(100), nullable=True)
     type = db.Column(db.CHAR, nullable=False)
+    comment = db.Column(db.String(200), nullable=True)
     parent_category_id = db.Column(db.Integer, db.ForeignKey('price_category.id'))
     subcategories = db.relationship("PriceCategory",
                                     backref=db.backref(
@@ -141,8 +142,9 @@ class PriceCategory(db.Model):
         obj_dict = {
             'id': self.id,
             'code': self.code,
+            'name': self.name,
             'type': self.type,
-            'name': self.name
+            'comment': self.comment
         }
 
         if full:
@@ -2047,7 +2049,7 @@ def get_currencies():
         Get Currency Codes
         ---
         tags:
-        - "Prices"
+        - "Currency exchange rate"
         produces:
         - "application/json"
         responses:
@@ -2186,20 +2188,20 @@ def get_currency_exchange(currency_code):
         Get currency exchange according to specified currency_code. 
         The rates are updated every day.
         ---
-          parameters:
-            - in: path
-              name: currency_code
-              type: string
-              description: Valid currency code specified in ISO standard 4217.
-          tags:
-            - Prices
-          responses:
-            200:
-              description: Floating point value that represents an exchange rate
-            404:
-              description: Currency code not found.
-            500:
-              description: Internal Server error or Database error
+        parameters:
+          - in: path
+            name: currency_code
+            type: string
+            description: Valid currency code specified in ISO standard 4217.
+        tags:
+          - "Currency exchange rate"
+        responses:
+          200:
+            description: Floating point value that represents an exchange rate
+          404:
+            description: Currency code not found.
+          500:
+            description: Internal Server error or Database error
     """
 
     try:
@@ -2241,7 +2243,7 @@ def get_currency_conversion(currency_code):
                 type: number
                 description: currency in USD to convert
         tags:
-        - "Prices"
+        - "Currency exchange rate"
         produces:
         - "application/json"
         consumes:
@@ -2273,6 +2275,105 @@ def get_currency_conversion(currency_code):
     except Exception as e:
         return f"Internal error: {e}", 500
 
+
+def process_excel(file):
+    """
+        responses:
+          400:
+            descripcion: Problems with request or excel processing
+          500:
+            description: Internal error
+    """
+
+    try:
+        file = request.files['file']
+        file_extension: list = file.filename.split('.')[-1]
+
+        if file_extension == constants.VALID_EXTENSIONS_XLSX:
+            sheets = pd.read_excel(file.read(), None, engine='openpyxl')
+
+        elif file_extension == constants.VALID_EXTENSIONS_XLS:
+            sheets = pd.read_excel(file.read(), None)
+
+        else:
+            abort(HTTPStatus.BAD_REQUEST, f'{file_extension} is not a valid extension')
+
+        return sheets
+
+    except KeyError as e:
+        abort(HTTPStatus.BAD_REQUEST, f"No Multipart file found or not selected file: {e}")
+
+    except XLRDError as e:
+        abort(HTTPStatus.BAD_REQUEST, f'Excel file error: {e}')
+
+    except Exception as e:
+        abort(HTTPStatus.INTERNAL_SERVER_ERROR, f'Error: {e}')
+
+
+@app.route("/api/prices/comments", methods=["PUT"])
+@token_required
+def upload_comments():
+    """
+        Upload/Update Category Comments
+
+        It receives a xls or xlsx sheet with MODULO and DESCRIPCION columns.
+        if MODULO value does not match with a category name, is ignored.
+        ---
+        tags:
+        - "Price category comments"
+        produces:
+        - "application/json"
+        consumes:
+        - "multipart/form-data"
+        parameters:
+        - name: "file"
+          in: "formData"
+          description: "File to get comments"
+          type: file
+          required: true
+        responses:
+          200:
+            description: Comments uploaded.
+          400:
+            description: Problems with request or excel processing
+          500:
+            description: Internal error
+    """
+    try: 
+        sheet = process_excel(request.files)
+
+        sheet = list(sheet.values())[0]
+
+        modules = set(sheet["MODULO"].values)
+
+        categories = PriceCategory.query \
+                                .filter(PriceCategory.name.in_(modules)) \
+                                .all()
+
+        for category in categories:
+
+            if category.name in modules:
+
+                row = sheet[sheet["MODULO"]==category.name]
+                category.comment = row["DESCRIPCION"].values[0]
+
+                # sheet.drop(row.index, inplace=True, axis=0)
+
+        db.session.commit()
+
+        return jsonify({'status': 'OK'})
+
+    except KeyError as e:
+        db.session.rollback()
+        abort(HTTPStatus.BAD_REQUEST, f"Request Error, columns must be MODULO or DESCRIPCION. {e}")
+
+    except SQLAlchemyError as e:
+        db.session.rollback()
+        abort(HTTPStatus.INTERNAL_SERVER_ERROR, f"Database error. {e}")
+
+    except Exception as e:
+        db.session.rollback()
+        abort(HTTPStatus.INTERNAL_SERVER_ERROR, f"Internal Server error. {e}")
 
 if __name__ == '__main__':
     app.run(host=APP_HOST, port=APP_PORT, debug=True)
