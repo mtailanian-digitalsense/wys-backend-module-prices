@@ -6,8 +6,7 @@ import json
 import pandas as pd
 import requests
 import datetime as dt
-from pprint import pprint
-from flask import Flask, jsonify, abort, request
+from flask import Flask, jsonify, abort, request, make_response
 from functools import wraps
 from flask_cors import CORS
 from flask_sqlalchemy import SQLAlchemy
@@ -20,6 +19,9 @@ from xlrd import XLRDError
 
 import constants
 
+# Debug
+from pprint import pprint
+
 # Loading Config Parameters
 DB_USER = os.getenv('DB_USER', 'wys')
 DB_PASS = os.getenv('DB_PASSWORD', 'rac3e/07')
@@ -28,6 +30,7 @@ DB_PORT = os.getenv('DB_PORT', '3307')
 DB_SCHEMA = os.getenv('DB_SCHEMA', 'wys')
 APP_HOST = os.getenv('APP_HOST', '127.0.0.1')
 APP_PORT = os.getenv('APP_PORT', 5008)
+
 PROJECTS_MODULE_HOST = os.getenv('PROJECTS_MODULE_HOST', '127.0.0.1')
 PROJECTS_MODULE_PORT = os.getenv('PROJECTS_MODULE_PORT', 5000)
 PROJECTS_MODULE_API = os.getenv('PROJECTS_MODULE_API', '/api/projects/')
@@ -144,7 +147,7 @@ class PriceCategory(db.Model):
             'code': self.code,
             'name': self.name,
             'type': self.type,
-            'comment': self.comment
+            'comment': self.comment if self.comment else ''
         }
 
         if full:
@@ -159,6 +162,8 @@ class PriceCategory(db.Model):
 
 class PriceGen(db.Model):
     """
+    Price value and m2 for a project.
+
     id:  Id primary key
     project_id: Project ID that you want to save this configurations
     value: Value of the PROJECT
@@ -189,8 +194,8 @@ class PriceGen(db.Model):
 
         return obj_dict
 
-    def serialize(self, full):
-        return jsonify(self.to_dict())
+    def serialize(self, full=True):
+        return jsonify(self.to_dict(full))
 
 
 class PriceDesign(db.Model):
@@ -375,6 +380,9 @@ class ExchangeRateTimeStamp(db.Model):
 db.create_all()
 db.session.commit()
 
+def failure(status, message):
+    """Simple abort wrapper"""
+    abort(make_response({"message": message},status))
 
 def token_required(f):
     @wraps(f)
@@ -391,7 +399,7 @@ def token_required(f):
             app.logger.debug("token_required")
             return jsonify({'message': 'a valid token is missing'})
 
-        app.logger.debug("Token: " + token)
+        app.logger.debug(f"Token: {token[0:10]} ... {token[-10:]}")
         try:
             data = jwt.decode(token, app.config['SECRET_KEY'],
                               algorithms=['RS256'], audience="1")
@@ -461,10 +469,10 @@ def get_price_by_price_gen_id(price_gen_id):
         Get Price of prices module by price gen ID from Projects module.
         ---
         parameters:
-          - in: path
-            name: price_gen_id
-            type: integer
-            description: Price gen ID
+        - in: path
+          name: price_gen_id
+          type: integer
+          description: Price gen ID
         tags:
         - "Prices"
         responses:
@@ -497,18 +505,18 @@ def exists_record_price_gen(project_id):
     """
         Get if exists saved record in prices module
         ---
-          parameters:
-            - in: path
-              name: project_id
-              type: integer
-              description: Saved project ID
-          tags:
-            - Prices_validation_requests
-          responses:
-            200:
-              description: Answer yes or no, if it exists
-            500:
-              description: Internal Server error or Database error
+        parameters:
+        - in: path
+          name: project_id
+          type: integer
+          description: Saved project ID
+        tags:
+        - Prices_validation_requests
+        responses:
+          200:
+            description: Answer yes or no, if it exists
+          500:
+            description: Internal Server error or Database error
     """
     resp = 'No'
 
@@ -531,18 +539,18 @@ def exists_record_workspaces(project_id):
     """
         Get if exists saved record in m2 module
         ---
-          parameters:
-            - in: path
-              name: project_id
-              type: integer
-              description: Saved project ID
-          tags:
-            - Prices_validation_requests
-          responses:
-            200:
-              description: Answer yes or no, if it exists
-            500:
-              description: Internal Server error or Database error
+        parameters:
+        - in: path
+          name: project_id
+          type: integer
+          description: Saved project ID
+        tags:
+        - Prices_validation_requests
+        responses:
+          200:
+            description: Answer yes or no, if it exists
+          500:
+            description: Internal Server error or Database error
     """
     resp = 'No'
 
@@ -566,28 +574,28 @@ def update_prices_project_by_id(project_id):
     """
         Update Prices Project By ID
         ---
-          consumes:
-            - "application/json"
-          tags:
-            - "Prices"
-          parameters:
-            - in: path
-              name: project_id
-              type: integer
-              description: Project ID
-            - in: "body"
-              name: "body"
-              required:
-                - m2
-              properties:
-                m2:
-                  type: number
-                  format: float
-          responses:
-            200:
-              description: Prices Project Object or deleted message
-            500:
-              description: "Database error"
+        tags:
+        - "Prices"
+        consumes:
+        - "application/json"
+        parameters:
+        - in: path
+          name: project_id
+          type: integer
+          description: Project ID
+        - in: "body"
+          name: "body"
+          required:
+            - m2
+          properties:
+            m2:
+              type: number
+              format: float
+        responses:
+          200:
+            description: Prices Project Object or deleted message
+          500:
+            description: "Database error"
     """
 
     try:
@@ -1097,26 +1105,30 @@ def get_categories():
         produces:
         - "application/json"
         responses:
-            200:
-              description: Categories
-            500:
-              description: Database or Internal Server error
+          200:
+            description: Categories
+          500:
+            description: Database or Internal Server error
     """
     try:
-        # Query all Categories en DB.
-        categories: list = PriceCategory.query.filter(
-            PriceCategory.parent_category_id == None).all()
+        categories: list = PriceCategory.query\
+            .filter(PriceCategory.parent_category_id == None)\
+            .filter(PriceCategory.type != "C")\
+            .all()
+
         countries: list = PriceCountry.query.all()
 
-    except Exception as exp:
-        logging.error(f"Database error {exp}")
-        return jsonify({'message': f"Database error {exp}"}), 500
+        return jsonify({
+            'categories': [cat.to_dict() for cat in categories],
+            'countries': [country.to_dict() for country in countries]
+        })
 
-    cat: PriceCategory
-    return jsonify({
-        'categories': [cat.to_dict() for cat in categories],
-        'countries': [country.to_dict() for country in countries]
-    })
+    except SQLAlchemyError as e:
+        failure(HTTPStatus.INTERNAL_SERVER_ERROR, f"Database error: {e}")
+
+    except Exception as e:
+        # logging.error(f"Database Exception: {e}")
+        failure(HTTPStatus.INTERNAL_SERVER_ERROR, f"Internal error: {e}")
 
 
 @app.route('/api/prices/save', methods=['POST'])
@@ -1132,76 +1144,75 @@ def save_prices():
         produces:
         - application/json
         required:
-            - project_id
-            - value
-            - country
-            - categories
-            - workspaces
-            - m2
+        - project_id
+        - value
+        - country
+        - categories
+        - workspaces
+        - m2
         parameters:
         - in: body
           name: body
           properties:
             project_id:
-                type: number
-                format: integer
+              type: number
+              format: integer
             value:
-                type: number
-                format: float
+              type: number
+              format: float
             m2:
-                type: number
-                format: float
+              type: number
+              format: float
             categories:
-                type: array
-                items:
-                    type: object
-                    properties:
-                        id:
-                            type: integer
-                            description: Unique id
-                        code:
-                            type: string
-                            description: Category code
-
-                        name:
-                            type: string
-                            description: Category Name
-                        type:
-                            type: string
-                            description: Type of question ('A' or 'B')
-                        resp:
-                            type: string
-                            description: Response for this category
-                            enum: [low, normal, high]
+              type: array
+              items:
+                type: object
+                properties:
+                  id:
+                    type: integer
+                    description: Unique id
+                  code:
+                    type: string
+                    description: Category code
+                  name:
+                    type: string
+                    description: Category Name
+                  type:
+                    type: string
+                    description: Type of question ('A' or 'B')
+                  resp:
+                    type: string
+                    description: Response for this category
+                    enum: [low, normal, high]
             workspaces:
-                type: array
-                items:
-                    type: object
-                    properties:
-                        id:
-                            type: integer
-                            description: Unique id
-                        m2_gen_id:
-                            type: integer
-                            description: m2_gen_id
-                        observation:
-                            type: integer
-                            description: observation
-                        quantity:
-                            type: integer
-                            description: quantity
-                        space_id:
-                            type: integer
-                            description: space_id
+              type: array
+              items:
+                type: object
+                properties:
+                  id:
+                    type: integer
+                    description: Unique id
+                  m2_gen_id:
+                    type: integer
+                    description: m2_gen_id
+                  observation:
+                    type: integer
+                    description: observation
+                  quantity:
+                    type: integer
+                    description: quantity
+                  space_id:
+                    type: integer
+                    description: space_id
             country:
-                type: string
+              type: string
         responses:
-            400:
-                description: Data or missing field in body.
-            404:
-                description: Data object not found.
-            500:
-                description: Internal server error.
+          400:
+            description: Data or missing field in body.
+          404:
+            description: Data object not found.
+          500:
+            description: Internal server error.
     """
 
     # Check JSON Input
@@ -1372,81 +1383,92 @@ def get_project_prices(project_id):
     """
         Get saved price info info.
         ---
-          parameters:
-            - in: path
-              name: project_id
-              type: integer
-              description: Saved project ID
-          tags:
-            - Prices
-          responses:
-            200:
-              description: Saved Price Gen Object, and related Price Value Data Object.
-            404:
-              description: Project Not Found, it could be an error or it doesn't exists yet.
-            500:
-              description: Internal Server error or Database error
+        parameters:
+        - in: path
+          name: project_id
+          type: integer
+          description: Saved project ID
+        tags:
+        - Prices
+        responses:
+          200:
+            description: Saved Price Gen Object, and related Price Value Data Object.
+          404:
+            description: Project Not Found, it could be an error or it doesn't exists yet.
+          500:
+            description: Internal Server error or Database error
     """
     resp = {}
     categories = []
 
+    pricegen = PriceGen.query\
+        .filter(PriceGen.project_id == project_id)\
+        .first()
+
+    if pricegen is None:
+        failure(HTTPStatus.NOT_FOUND, f"Project {project_id} not found")
+
+    pg_dict = pricegen.to_dict()
+    resp['value'] = pg_dict['value']
+    resp['m2'] = pg_dict['m2']
+
     try:
-        pricegen = PriceGen.query.filter(
-            PriceGen.project_id == project_id).first()
-        if pricegen is not None:
-            pg_dict = pricegen.to_dict()
-            resp['value'] = pg_dict['value']
-            resp['m2'] = pg_dict['m2']
-            for element in pg_dict['price_value_saved']:
-                detail = element['price_value_detail'][0]
+        for element in pg_dict['price_value_saved']:
+            detail = element['price_value_detail'][0]
 
-                c = {}
-                try:
-                    category: PriceCategory = PriceCategory.query \
-                        .filter(PriceCategory.id == detail['category_id']) \
-                        .first()
+            c = {}
+
+            category: PriceCategory = PriceCategory.query \
+                .filter(PriceCategory.id == detail['category_id']) \
+                .filter(PriceCategory.type != "C") \
+                .first()
+
+            if category is None:
+                continue
+
+            flag = False
+            for dic in categories:
+                if dic['name'] != category.name:
+                    flag = True
+            for dic in categories:
+                if dic['name'] == category.name:
                     flag = False
-                    for dic in categories:
-                        if dic['name'] != category.name:
-                            flag = True
-                    for dic in categories:
-                        if dic['name'] == category.name:
-                            flag = False
-                   
-                    if flag or len(categories) == 0:
-                        c['code'] = category.code
-                        c['id'] = detail['category_id']
-                        c['name'] = category.name
-                        c['resp'] = element['price_value_option_selected']
-                        c['type'] = category.type
-                        resp['country'] = detail['country_name']['name'].lower()
-                        categories.append(c)
-                except Exception as exp:
-                    logging.error(f"Database Exception: {exp}")
-                    return f"Database Exception: {exp}", 500
 
-            # Getting workspaces
-            token = request.headers.get('Authorization', None)
-            project = get_workspace_by_project_id(pg_dict['project_id'], token)
+            if flag or len(categories) == 0:
+                # Creo que esto podría reemplazarse con category.to_dict()
+                c['code'] = category.code
+                c['id'] = detail['category_id']
+                c['name'] = category.name
+                c['resp'] = element['price_value_option_selected']
+                c['type'] = category.type
+                c['comment'] = category.comment if category.comment else ''
+                resp['country'] = detail['country_name']['name'].lower()
+                categories.append(c)
 
-            if(project is not None):
-                resp['workspaces'] = project['m2_generated_data']['workspaces']
-            else:
-                logging.warning(
-                    f'No workspaces saved yet: project#{project_id}')
-                resp['workspaces'] = []
+        # Getting workspaces
+        token = request.headers.get('Authorization', None)
+        project = get_workspace_by_project_id(pg_dict['project_id'], token)
 
-            resp['categories'] = categories
-
-            if(len(categories) > 0):
-                return jsonify(resp), 200
-            else:
-                return {}, 200
+        if project:
+            resp['workspaces'] = project['m2_generated_data']['workspaces']
         else:
-            return {}, 404
-    except Exception as exp:
-        logging.error(f"Database Exception: {exp}")
-        return f"Database Exception: {exp}", 500
+            logging.warning(
+                f'No workspaces saved yet: project#{project_id}')
+            resp['workspaces'] = []
+
+        resp['categories'] = categories
+
+        if(len(categories) > 0):
+            return jsonify(resp), 200
+        else:
+            return jsonify({}), 200
+
+    except SQLAlchemyError as e:
+        failure(HTTPStatus.INTERNAL_SERVER_ERROR, f"Database error: {e}")
+
+    except Exception as e:
+        # logging.error(f"Database Exception: {e}")
+        failure(HTTPStatus.INTERNAL_SERVER_ERROR, f"Internal error: {e}")
 
 
 @app.route('/api/prices/design/<country_id>/m2/<m2>', methods=['GET'])
@@ -1455,27 +1477,27 @@ def get_design_cost(country_id,m2):
     """
         Get a country's design cost
         ---
-          parameters:
-            - in: path
-              name: country_id
-              type: integer
-              required: true
-              description: country id
-            - in: path
-              name: m2
-              type: number
-              format: float
-              required: true
-              description: project's m2
-          tags:
-            - Prices
-          responses:
-            200:
-              description: Dictionary with details of the price design cost
-            404:
-              description: No design cost loaded for this country
-            500:
-              description: Internal Server error or Database error
+        parameters:
+        - in: path
+          name: country_id
+          type: integer
+          required: true
+          description: country id
+        - in: path
+          name: m2
+          type: number
+          format: float
+          required: true
+          description: project's m2
+        tags:
+        - Prices
+        responses:
+          200:
+            description: Dictionary with details of the price design cost
+          404:
+            description: No design cost loaded for this country
+          500:
+            description: Internal Server error or Database error
     """
     design = {}
     design['name'] = 'COSTOS DE DISENO'
@@ -1515,7 +1537,6 @@ def get_estimated_price():
     """
         Get Estimated price
         ---
-
         tags:
         - "Prices"
         produces:
@@ -1531,56 +1552,52 @@ def get_estimated_price():
           - country
           properties:
             categories:
-                type: array
-                items:
-                    type: object
-                    properties:
-                        id:
-                            type: integer
-                            description: Unique id
-                        code:
-                            type: string
-                            description: Category code
-
-                        name:
-                            type: string
-                            description: Category Name
-                        type:
-                            type: string
-                            description: Type of question ('A' or 'B')
-                            enum: [A,B]
-                        resp:
-                            type: string
-                            description: Response for this category
-                            enum: [low, normal, high]
+              type: array
+              items:
+                type: object
+                properties:
+                  id:
+                    type: integer
+                    description: Unique id
+                  code:
+                    type: string
+                    description: Category code
+                  name:
+                    type: string
+                    description: Category Name
+                  type:
+                    type: string
+                    description: Type of question ('A' or 'B')
+                    enum: [A,B]
+                  resp:
+                    type: string
+                    description: Response for this category
+                    enum: [low, normal, high]
             workspaces:
-                type: array
-                items:
-                    type: object
-                    properties:
-                        id:
-                            type: integer
-                            description: Unique id
-                        m2_gen_id:
-                            type: integer
-                            description: m2_gen_id
-                        observation:
-                            type: integer
-                            description: observation
-                        quantity:
-                            type: integer
-                            description: quantity
-                        space_id:
-                            type: integer
-                            description: space_id
+              type: array
+              items:
+                type: object
+                properties:
+                  id:
+                    type: integer
+                    description: Unique id
+                  m2_gen_id:
+                    type: integer
+                    description: m2_gen_id
+                  observation:
+                    type: integer
+                    description: observation
+                  quantity:
+                    type: integer
+                    description: quantity
+                  space_id:
+                    type: integer
+                    description: space_id
             country:
-                type: string
+              type: string
             m2:
-                type: number
-                format: float
-
-
-
+              type: number
+              format: float
     """
     # total cost in Estimador_de_costo interface
     # Check JSON Input
@@ -1747,7 +1764,6 @@ def get_estimated_price_detail():
     """
         Get Estimated price
         ---
-
         tags:
         - "Prices"
         produces:
@@ -1763,52 +1779,53 @@ def get_estimated_price_detail():
           - country
           properties:
             categories:
-                type: array
-                items:
-                    type: object
-                    properties:
-                        id:
-                            type: integer
-                            description: Unique id
-                        code:
-                            type: string
-                            description: Category code
-
-                        name:
-                            type: string
-                            description: Category Name
-                        type:
-                            type: string
-                            description: Type of question ('A' or 'B')
-                        resp:
-                            type: string
-                            description: Response for this category
-                            enum: [low, normal, high]
+              type: array
+              items:
+                type: object
+                properties:
+                  id:
+                    type: integer
+                    description: Unique id
+                  code:
+                    type: string
+                    description: Category code
+                  name:
+                    type: string
+                    description: Category Name
+                  type:
+                    type: string
+                    description: Type of question ('A' or 'B')
+                  resp:
+                    type: string
+                    description: Response for this category
+                    enum: [low, normal, high]
             workspaces:
-                type: array
-                items:
-                    type: object
-                    properties:
-                        id:
-                            type: integer
-                            description: Unique id
-                        m2_gen_id:
-                            type: integer
-                            description: m2_gen_id
-                        observation:
-                            type: integer
-                            description: observation
-                        quantity:
-                            type: integer
-                            description: quantity
-                        space_id:
-                            type: integer
-                            description: space_id
+              type: array
+              items:
+                type: object
+                properties:
+                  id:
+                    type: integer
+                    description: Unique id
+                  m2_gen_id:
+                    type: integer
+                    description: m2_gen_id
+                  observation:
+                    type: integer
+                    description: observation
+                  quantity:
+                    type: integer
+                    description: quantity
+                  space_id:
+                    type: integer
+                    description: space_id
             country:
-                type: string
+              type: string
+              example:
+                  country: CHILE
             m2:
-                type: number
-                format: float
+              type: number
+              format: float
     """
     # Check JSON Input
     params = {
@@ -1817,8 +1834,6 @@ def get_estimated_price_detail():
         'country',
         'm2'
     }
-
-    import pudb; pudb.set_trace()
 
     for param in params:
         if param not in request.json:
@@ -2053,10 +2068,10 @@ def get_currencies():
         produces:
         - "application/json"
         responses:
-            200:
-              description: Currency codes used in /api/prices/exchange. They follow the ISO currency codes standard.
-            500:
-              description: Database or Internal Server error
+          200:
+            description: Currency codes used in /api/prices/exchange. They follow the ISO currency codes standard.
+          500:
+            description: Database or Internal Server error
     """
 
     rv = requests.get(EXCHANGE_CURRENCY_URL)
@@ -2189,12 +2204,12 @@ def get_currency_exchange(currency_code):
         The rates are updated every day.
         ---
         parameters:
-          - in: path
-            name: currency_code
-            type: string
-            description: Valid currency code specified in ISO standard 4217.
+        - in: path
+          name: currency_code
+          type: string
+          description: Valid currency code specified in ISO standard 4217.
         tags:
-          - "Currency exchange rate"
+        - "Currency exchange rate"
         responses:
           200:
             description: Floating point value that represents an exchange rate
@@ -2240,8 +2255,8 @@ def get_currency_conversion(currency_code):
           - value
           properties:
             value:
-                type: number
-                description: currency in USD to convert
+              type: number
+              description: currency in USD to convert
         tags:
         - "Currency exchange rate"
         produces:
@@ -2249,12 +2264,12 @@ def get_currency_conversion(currency_code):
         consumes:
         - "application/json"
         responses:
-            200:
-              description: Floating point value that represents an exchange rate
-            404:
-              description: Currency code not found.
-            500:
-              description: Internal Server error or Database error
+          200:
+            description: Floating point value that represents an exchange rate
+          404:
+            description: Currency code not found.
+          500:
+            description: Internal Server error or Database error
     """
 
     try:
@@ -2296,18 +2311,18 @@ def process_excel(file):
             sheets = pd.read_excel(file.read(), None)
 
         else:
-            abort(HTTPStatus.BAD_REQUEST, f'{file_extension} is not a valid extension')
+            failure(HTTPStatus.BAD_REQUEST, f'{file_extension} is not a valid extension')
 
         return sheets
 
     except KeyError as e:
-        abort(HTTPStatus.BAD_REQUEST, f"No Multipart file found or not selected file: {e}")
+        failure(HTTPStatus.BAD_REQUEST, f"No Multipart file found or not selected file: {e}")
 
     except XLRDError as e:
-        abort(HTTPStatus.BAD_REQUEST, f'Excel file error: {e}')
+        failure(HTTPStatus.BAD_REQUEST, f'Excel file error: {e}')
 
     except Exception as e:
-        abort(HTTPStatus.INTERNAL_SERVER_ERROR, f'Error: {e}')
+        failure(HTTPStatus.INTERNAL_SERVER_ERROR, f'Error: {e}')
 
 
 @app.route("/api/prices/comments", methods=["PUT"])
@@ -2365,15 +2380,15 @@ def upload_comments():
 
     except KeyError as e:
         db.session.rollback()
-        abort(HTTPStatus.BAD_REQUEST, f"Request Error, columns must be MODULO or DESCRIPCION. {e}")
+        failure(HTTPStatus.BAD_REQUEST, f"Request Error, columns must be MODULO or DESCRIPCION. {e}")
 
     except SQLAlchemyError as e:
         db.session.rollback()
-        abort(HTTPStatus.INTERNAL_SERVER_ERROR, f"Database error. {e}")
+        failure(HTTPStatus.INTERNAL_SERVER_ERROR, f"Database error. {e}")
 
     except Exception as e:
         db.session.rollback()
-        abort(HTTPStatus.INTERNAL_SERVER_ERROR, f"Internal Server error. {e}")
+        failure(HTTPStatus.INTERNAL_SERVER_ERROR, f"Internal Server error. {e}")
 
 if __name__ == '__main__':
     app.run(host=APP_HOST, port=APP_PORT, debug=True)
