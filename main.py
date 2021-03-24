@@ -1724,18 +1724,24 @@ def get_estimated_price():
             for _space in workspaces:
                 space_id = _space['space_id']
 
-                if space_id in space_category_prices:
-                    if cat_id in space_category_prices[space_id]:
-                        final_value += (space_category_prices[space_id]
-                                    [cat_id][cat_resp]) * _space['quantity']
-                    else:
-                        logging.warning(f"Not valid cat_id: {category['id']}")
-                else:
+                if space_id not in space_category_prices:
                     logging.warning(
                         f"Not valid space_id: {_space['space_id']}")
+                    continue
+
+                if cat_id not in space_category_prices[space_id]:
+                    logging.warning(f"Not valid cat_id: {category['id']}")
+                    continue
+
+                final_value += (space_category_prices[space_id]
+                            [cat_id][cat_resp]) * _space['quantity']
+
+
         else:
             calc_type = ''
             div_factor = 1
+            val_factor = 1
+
             if cat_name in constants.BASES_CALC:
                 calc_type = constants.BASES_CALC[cat_name]
                 calc_type = calc_type.split('/')
@@ -1743,20 +1749,20 @@ def get_estimated_price():
                     div_factor = float(calc_type[1])
                 calc_type = calc_type[0]
 
-            if cat_id in space_category_prices[-1]:
-                if calc_type == 'm2':
-                    final_value += (space_category_prices[-1]
-                            [cat_id][cat_resp]*(m2/div_factor))
-                elif calc_type == 'weeks':
-                    final_value += (space_category_prices[-1]
-                            [cat_id][cat_resp]*weeks)
-                else:
-                    final_value += (space_category_prices[-1]
-                            [cat_id][cat_resp])
-            else:
+            if cat_id not in space_category_prices[-1]:
                 logging.warning(f"Not valid cat_id: {category['id']}")
-    
-    
+                continue
+
+            if calc_type == 'm2':
+                val_factor = m2/div_factor
+
+            elif calc_type == 'weeks':
+                val_factor = weeks
+
+            final_value += space_category_prices[-1][cat_id][cat_resp]*val_factor
+
+
+
     price_design: PriceDesign = PriceDesign.query.filter(
         PriceDesign.country_id == country.id).first()
 
@@ -1968,6 +1974,7 @@ def get_estimated_price_detail():
         cat_subcategories = cat_obj.subcategories
         category['subcategories'] = []
         cat_value = 0
+
         if cat_subcategories:
             for subcat in cat_subcategories:
                 subcat_dict = subcat.to_dict()
@@ -1975,28 +1982,35 @@ def get_estimated_price_detail():
                 subcat_dict['resp'] = cat_resp
                 if(category['code'] == 'BASE'):
                     category['subcategories'].append(subcat_dict)
+        
         if category['code'] != 'BASE':
             for _space in workspaces:
                 space_id = _space['space_id']
 
-                if space_id in space_category_prices:
-                    if cat_id in space_category_prices[space_id]:
-                        cat_value += (space_category_prices[space_id]
-                                    [cat_id][cat_resp]) * _space['quantity']
-                        final_value += cat_value
-                        category['value'] = cat_value
-                        if cat_subcategories:
-                            for subcat in category['subcategories']:
-                                if subcat['id'] in space_category_prices[space_id]:
-                                    subcat['value'] += (space_category_prices[space_id]
-                                        [subcat['id']][cat_resp]) * _space['quantity']
-                                else:
-                                    logging.warning(f"Not valid subcat_id: {subcat['id']}")
-                    else:
-                        logging.warning(f"Not valid cat_id: {category['id']}")
-                else:
-                    logging.warning(
-                        f"Not valid space_id: {_space['space_id']}")
+                if space_id not in space_category_prices:
+                    logging.warning(f"Not valid space_id: {_space['space_id']}")
+                    continue
+
+                if cat_id not in space_category_prices[space_id]:
+                    logging.warning(f"Not valid cat_id: {category['id']}")
+                    continue
+
+                cat_value += (space_category_prices[space_id]
+                            [cat_id][cat_resp]) * _space['quantity']
+
+                final_value += cat_value
+                category['value'] = cat_value
+
+                if not cat_subcategories:
+                    continue
+
+                for subcat in category['subcategories']:
+                    if subcat['id'] not in space_category_prices[space_id]:
+                        logging.warning(f"Not valid subcat_id: {subcat['id']}")
+                        continue
+
+                    subcat['value'] += (space_category_prices[space_id]
+                        [subcat['id']][cat_resp]) * _space['quantity']
 
             if "value" not in category:
                 category["value"] = 0
@@ -2005,6 +2019,8 @@ def get_estimated_price_detail():
         else:
             calc_type = ''
             div_factor = 1
+            val_factor = 1
+
             if cat_name in constants.BASES_CALC:
                 calc_type = constants.BASES_CALC[cat_name]
                 calc_type = calc_type.split('/')
@@ -2012,45 +2028,32 @@ def get_estimated_price_detail():
                     div_factor = float(calc_type[1])
                 calc_type = calc_type[0]
 
-            if cat_id in space_category_prices[-1]:
-                if calc_type == 'm2':
-                    cat_value = (space_category_prices[-1]
-                            [cat_id][cat_resp]*(m2/div_factor))
-                    category['value'] = cat_value
-                    final_value += cat_value
-                    if cat_subcategories:
-                        for subcat in category['subcategories']:
-                            if subcat['id'] in space_category_prices[-1]:
-                                subcat['value'] += (space_category_prices[-1]
-                                                [subcat['id']][cat_resp]*(m2/div_factor))
-                            else:
-                                logging.warning(f"Not valid subcat_id: {subcat['id']}")
-                elif calc_type == 'weeks':
-                    cat_value = (space_category_prices[-1]
-                            [cat_id][cat_resp]*weeks)
-                    category['value'] = cat_value
-                    final_value += cat_value
-                    if cat_subcategories:
-                        for subcat in category['subcategories']:
-                            if subcat['id'] in space_category_prices[-1]:
-                                subcat['value'] += (space_category_prices[-1]
-                                                [subcat['id']][cat_resp]*weeks)
-                            else:
-                                logging.warning(f"Not valid subcat_id: {subcat['id']}")
-                else:
-                    cat_value = (space_category_prices[-1]
-                            [cat_id][cat_resp])
-                    category['value'] = cat_value
-                    final_value += cat_value
-                    if cat_subcategories:
-                        for subcat in category['subcategories']:
-                            if subcat['id'] in space_category_prices[-1]:
-                                subcat['value'] += (space_category_prices[-1]
-                                                [subcat['id']][cat_resp])
-                            else:
-                                logging.warning(f"Not valid subcat_id: {subcat['id']}")
-            else:
+            if cat_id not in space_category_prices[-1]:
                 logging.warning(f"Not valid cat_id: {category['id']}")
+                continue
+
+
+            if calc_type == 'm2':
+                val_factor = m2/div_factor
+
+            elif calc_type == 'weeks':
+                val_factor = weeks
+
+            cat_value = space_category_prices[-1][cat_id][cat_resp]*val_factor
+            category['value'] = cat_value
+            final_value += cat_value
+
+            if not cat_subcategories:
+                continue
+
+            for subcat in category['subcategories']:
+                if subcat['id'] not in space_category_prices[-1]:
+                    logging.warning(f"Not valid subcat_id: {subcat['id']}")
+                    continue
+
+                subcat['value'] += (space_category_prices[-1]
+                                [subcat['id']][cat_resp]*val_factor)
+
 
     #do a filter if de value in category is zero
     cat_tmp = []
