@@ -429,8 +429,10 @@ def get_project_weeks(m2, token):
             "mun_agility": "normal",
             "procurement_process": "direct"
         }
+        url = f'{TIMES_URL}{TIMES_MODULE_API}'
+
         resp = requests.post(
-            f'{TIMES_URL}{TIMES_MODULE_API}', headers=headers, json=data)
+            url, headers=headers, json=data)
         resp_data = json.loads(resp.text)
         return resp_data['weeks']
     except Exception as exp:
@@ -1607,7 +1609,7 @@ def get_estimated_price():
         'country',
         'm2'
     }
- 
+
     for param in params:
         if param not in request.json:
             logging.error(f'{param} not in body')
@@ -1627,9 +1629,9 @@ def get_estimated_price():
 
     # Get all spaces.
     token = request.headers.get('Authorization', None)
+    headers = {'Authorization': token}
     for _space in workspaces:
         try:
-            headers = {'Authorization': token}
             resp = requests.get(
                 f'http://{SPACES_MODULE_HOST}:{SPACES_MODULE_PORT}{SPACES_MODULE_API}'
                 f'/{_space["space_id"]}', headers=headers)
@@ -1646,13 +1648,13 @@ def get_estimated_price():
     country: PriceCountry = PriceCountry.query.filter(
         PriceCountry.name == country_name).first()
     if country is None:
-        return f'{country_name} is a invalid country'
+        failure(HTTPStatus.BAD_REQUEST, f'{country_name} is a invalid country')
 
     # Find prices according to space
     space_category_prices = {}
+
     # for _space in workspaces:
     i = 0
-
     while i < len(workspaces):
         space_name = spaces[workspaces[i]['space_id']]
         # Get PriceModule id
@@ -1679,18 +1681,32 @@ def get_estimated_price():
             space_category_prices[workspaces[i]['space_id']] = category_prices
         i = i+1
 
+    # Get al C type categories
+    ##########################
+
+    # Necesitaré algun otro filtro? Asi como country_id
+    # Deberían estar en space_category_prices?
+    c_categories = PriceCategory.query \
+        .filter(PriceCategory.type == "C") \
+        .all()
+
+    categories = [a.to_dict() for a in c_categories] + categories
+
+
     base_category_prices = {}
     # Get all base prices and save in a map:
-    base_prices = PriceValue.query.filter(PriceValue.country_id == country.id) \
+    base_prices = PriceValue.query \
+        .filter(PriceValue.country_id == country.id) \
         .filter(PriceValue.module_id == None)
-    base_price: PriceValue
 
+    base_price: PriceValue
     for base_price in base_prices:
         base_category_prices[base_price.category_id] = {
             'low': base_price.low,
             'normal': base_price.medium,
             'high': base_price.high
         }
+
     space_category_prices[-1] = base_category_prices
 
     final_value = 0
@@ -1700,9 +1716,10 @@ def get_estimated_price():
     # iterate in categories and find prices
     for category in categories:
         cat_id = category['id']
-        cat_resp = category['resp']
+        cat_resp = category['resp'] if "resp" in category else "normal"
         cat_name = category['name']
 
+        # Preguntar si Tipo C => BASE
         if category['code'] != 'BASE':
             for _space in workspaces:
                 space_id = _space['space_id']
@@ -1854,9 +1871,9 @@ def get_estimated_price_detail():
 
     # Get all spaces.
     token = request.headers.get('Authorization', None)
+    headers = {'Authorization': token}
     for _space in workspaces:
         try:
-            headers = {'Authorization': token}
             resp = requests.get(
                 f'http://{SPACES_MODULE_HOST}:{SPACES_MODULE_PORT}{SPACES_MODULE_API}'
                 f'/{_space["space_id"]}', headers=headers)
@@ -1873,10 +1890,11 @@ def get_estimated_price_detail():
     country: PriceCountry = PriceCountry.query.filter(
         PriceCountry.name == country_name).first()
     if country is None:
-        return f'{country_name} is a invalid country'
+        failure(HTTPStatus.BAD_REQUEST, f'{country_name} is a invalid country')
 
     # Find prices according to space
     space_category_prices = {}
+
     # for _space in workspaces:
     i = 0
     while i < len(workspaces):
@@ -1905,31 +1923,48 @@ def get_estimated_price_detail():
             space_category_prices[workspaces[i]['space_id']] = category_prices
         i = i+1
 
+    # Get al C type categories
+    ##########################
+
+    # Necesitaré algun otro filtro? Asi como country_id
+    # Deberían estar en space_category_prices?
+    c_categories = PriceCategory.query \
+        .filter(PriceCategory.type == "C") \
+        .all()
+
+    categories = [a.to_dict() for a in c_categories] + categories
+
+
     base_category_prices = {}
     # Get all base prices and save in a map:
-    base_prices = PriceValue.query.filter(PriceValue.country_id == country.id) \
+    base_prices = PriceValue.query \
+        .filter(PriceValue.country_id == country.id) \
         .filter(PriceValue.module_id == None)
-    base_price: PriceValue
 
+    base_price: PriceValue
     for base_price in base_prices:
         base_category_prices[base_price.category_id] = {
             'low': base_price.low,
             'normal': base_price.medium,
             'high': base_price.high
         }
+
     space_category_prices[-1] = base_category_prices
 
     final_value = 0
     m2 = request.json['m2']
     weeks = get_project_weeks(m2, token)
-    
+
     # iterate in categories and find prices
     for category in categories:
+        cat_obj = PriceCategory.query \
+            .filter(PriceCategory.name == category['name']) \
+            .first()
+
         cat_id = category['id']
-        cat_resp = category['resp']
+        cat_resp = category['resp'] if "resp" in category else "normal"
         cat_name = category['name']
-        cat_obj = PriceCategory.query.filter(
-            PriceCategory.name == category['name']).first()
+
         cat_subcategories = cat_obj.subcategories
         category['subcategories'] = []
         cat_value = 0
@@ -1962,6 +1997,11 @@ def get_estimated_price_detail():
                 else:
                     logging.warning(
                         f"Not valid space_id: {_space['space_id']}")
+
+            if "value" not in category:
+                category["value"] = 0
+                logging.warning(f'category without value: {category["name"]}')
+
         else:
             calc_type = ''
             div_factor = 1
