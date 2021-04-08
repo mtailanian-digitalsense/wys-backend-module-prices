@@ -152,3 +152,5 @@ pyvenv.cfg
 Include
 
 ~$Template_Planilla_Costos.xlsx
+**/Pipfile
+**/Pipfile.lock

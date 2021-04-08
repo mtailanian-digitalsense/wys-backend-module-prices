@@ -6,7 +6,7 @@ mysqlclient
 pillow
 pyjwt
 gunicorn
-cryptography  
+cryptography>=3.3.1,<4.0.0 
 flask-cors
 requests
 pandas
