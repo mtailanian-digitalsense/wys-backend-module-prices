@@ -1593,6 +1593,91 @@ def get_project_prices(project_id):
         return f"Database Exception: {exp}", 500
 
 
+@app.route("/api/prices/data/<price_gen_id>", methods=["GET"])
+@token_required
+def get_price_gen_prices(price_gen_id):
+    """
+    Get saved price info info.
+    ---
+      parameters:
+
+        - in: path
+          name: price_gen_id
+          type: integer
+          description: Saved PG ID
+
+      tags:
+
+        - Prices
+
+      responses:
+
+        200:
+          description: Saved Price Gen Object, and related Price Value Data Object.
+        404:
+          description: Project Not Found, it could be an error or it doesn't exists yet.
+        500:
+          description: Internal Server error or Database error
+    """
+    resp = {}
+    categories = []
+
+    try:
+        pricegen = PriceGen.query.filter(PriceGen.id == price_gen_id).first()
+        if pricegen is not None:
+            pg_dict = pricegen.to_dict()
+            resp["value"] = pg_dict["value"]
+            resp["m2"] = pg_dict["m2"]
+            for element in pg_dict["price_value_saved"]:
+                detail = element["price_value_detail"][0]
+
+                c = {}
+                try:
+                    category: PriceCategory = PriceCategory.query.filter(
+                        PriceCategory.id == detail["category_id"]
+                    ).first()
+                    flag = False
+                    for dic in categories:
+                        if dic["name"] != category.name:
+                            flag = True
+                    for dic in categories:
+                        if dic["name"] == category.name:
+                            flag = False
+
+                    if flag or len(categories) == 0:
+                        c["code"] = category.code
+                        c["id"] = detail["category_id"]
+                        c["name"] = category.name
+                        c["resp"] = element["price_value_option_selected"]
+                        c["type"] = category.type
+                        resp["country"] = detail["country_name"]["name"].lower()
+                        categories.append(c)
+                except Exception as exp:
+                    logging.error(f"Database Exception: {exp}")
+                    return f"Database Exception: {exp}", 500
+
+            # Getting workspaces
+            token = request.headers.get("Authorization", None)
+            project = get_workspace_by_project_id(pg_dict["project_id"], token)
+
+            if project is not None:
+                resp["workspaces"] = project["m2_generated_data"]["workspaces"]
+            else:
+                logging.warning(f"No workspaces saved yet for this PGID#{price_gen_id}")
+                resp["workspaces"] = []
+
+            resp["categories"] = categories
+
+            if len(categories) > 0:
+                return jsonify(resp), 200
+            else:
+                return {}, 200
+        else:
+            return {}, 404
+    except Exception as exp:
+        logging.error(f"Database Exception: {exp}")
+        return f"Database Exception: {exp}", 500
+
 @app.route("/api/prices/design/<country_id>/m2/<m2>", methods=["GET"])
 @token_required
 def get_design_cost(country_id, m2):
