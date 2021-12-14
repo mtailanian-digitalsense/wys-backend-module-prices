@@ -395,6 +395,53 @@ class PriceValue(db.Model):
         """Returns a json with a dictionary with the result"""
         return jsonify(self.to_dict())
 
+class ExchangeRates(db.Model):
+    """
+    id: Currency code
+    rate: Currency rate with base USD
+    """
+    id = db.Column(db.String(3), nullable=False, primary_key=True)
+    rate = db.Column(db.Float, nullable=False, default=0.0)
+
+    def to_dict(self):
+        """
+        Convert to dictionary
+        """
+        obj_dict = {
+            'rate_id': self.id,
+            'rate_value': self.rate
+        }
+
+        return obj_dict
+
+    def serialize(self):
+        return jsonify(self.to_dict())
+
+
+class ExchangeRateTimeStamp(db.Model):
+    """
+    id: Identifier, there is only one row with index 1.
+    lastUpdate: TimeStamp of the last time that ExchangeRates was updated.
+    """
+
+    id = db.Column(db.Integer, primary_key=True)
+    lastUpdate = db.Column(db.DateTime, nullable=False, default=dt.datetime(1970,1,1))
+
+    def to_dict(self):
+        """
+        Convert to dictionary
+        """
+        obj_dict = {
+            'rate_id': self.id,
+            'lastUpdate': self.lastUpdate
+        }
+
+        return obj_dict
+
+    def serialize(self):
+        return jsonify(self.to_dict())
+
+
 
 db.create_all()
 db.session.commit()
