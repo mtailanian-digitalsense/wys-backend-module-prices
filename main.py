@@ -2591,18 +2591,18 @@ def process_excel(file):
             sheets = pd.read_excel(file.read(), None)
 
         else:
-            failure(HTTPStatus.BAD_REQUEST, f'{file_extension} is not a valid extension')
+            return f'{file_extension} is not a valid extension',500
 
         return sheets
 
     except KeyError as e:
-        failure(HTTPStatus.BAD_REQUEST, f"No Multipart file found or not selected file: {e}")
+        return f"No Multipart file found or not selected file: {e}", 500
 
     except XLRDError as e:
-        failure(HTTPStatus.BAD_REQUEST, f'Excel file error: {e}')
+        return f'Excel file error: {e}', 500
 
     except Exception as e:
-        failure(HTTPStatus.INTERNAL_SERVER_ERROR, f'Error: {e}')
+        return f'Error: {e}',500
 
 
 @app.route("/api/prices/comments", methods=["PUT"])
@@ -2660,15 +2660,15 @@ def upload_comments():
 
     except KeyError as e:
         db.session.rollback()
-        failure(HTTPStatus.BAD_REQUEST, f"Request Error, columns must be MODULO or DESCRIPCION. {e}")
+        return f"Request Error, columns must be MODULO or DESCRIPCION. {e}",500
 
     except SQLAlchemyError as e:
         db.session.rollback()
-        failure(HTTPStatus.INTERNAL_SERVER_ERROR, f"Database error. {e}")
+        return f"Database error. {e}",500
 
     except Exception as e:
         db.session.rollback()
-        failure(HTTPStatus.INTERNAL_SERVER_ERROR, f"Internal Server error. {e}")
+        return f"Internal Server error. {e}",500
 
 if __name__ == '__main__':
     app.run(host=APP_HOST, port=APP_PORT, debug=True)
