@@ -1608,6 +1608,7 @@ def get_project_prices(project_id):
                     if flag or len(categories) == 0:
                         c["code"] = category.code
                         c["id"] = detail["category_id"]
+                        c['comment'] = category.comment
                         c["name"] = category.name
                         c["resp"] = element["price_value_option_selected"]
                         c["type"] = category.type
