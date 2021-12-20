@@ -2297,6 +2297,7 @@ def get_estimated_price_detail():
     # do a filter if de value in category is zero
     cat_tmp = []
     for category in categories:
+        print(category)
         if category["value"] > 0:
             cat_tmp.append(category)
 
