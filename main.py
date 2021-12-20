@@ -2298,7 +2298,7 @@ def get_estimated_price_detail():
     cat_tmp = []
     for category in categories:
         print(category)
-        if category["value"] > 0:
+        if "value" in category and category["value"] > 0:
             cat_tmp.append(category)
 
     categories = cat_tmp
