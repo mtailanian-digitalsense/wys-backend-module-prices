@@ -1224,9 +1224,9 @@ def upload_prices():
                     logging.error(f"Database error {exp}")
                     return jsonify({"message": f"Database error {exp}"}), 500
 
-            category_low_value += low
-            category_medium_value += medium
-            category_high_value += high
+            category_low_value += float(low)
+            category_medium_value += float(medium)
+            category_high_value += float(high)
 
             value.low = low
             value.medium = medium
