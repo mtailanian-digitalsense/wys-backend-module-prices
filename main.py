@@ -457,7 +457,7 @@ def token_required(f):
             token = bearer_token.split(" ")[1]
         except Exception as ierr:
             app.logger.error(ierr)
-            return jsonify({'message': 'a valid bearer token is missing'}), 500
+            return jsonify({'message': 'a valid bearer token is missing'}), 401
 
         if not token:
             app.logger.debug("token_required")
@@ -465,7 +465,6 @@ def token_required(f):
 
         app.logger.debug(f"Token: " + token)
         try:
-            print('hola')
             data = jwt.decode(token, app.config['SECRET_KEY'],
                               algorithms=['RS256'], audience="1")
             print(data)
